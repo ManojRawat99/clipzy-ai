@@ -30,6 +30,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def startup_event():
+    try:
+        from youtube import get_cookie_file
+        cookie_path = get_cookie_file()
+        if cookie_path and cookie_path.exists():
+            try:
+                with open(cookie_path, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = [l for l in f.read().splitlines() if l.strip() and not l.startswith("#")]
+                print("=" * 60)
+                print(f"[Clipzy AI] [COOKIES ACTIVE] {len(lines)} YouTube cookies successfully loaded!")
+                print(f"[Clipzy AI] Cookie Path: {cookie_path}")
+                print(f"[Clipzy AI] Permanent server-wide authentication active for ALL users!")
+                print("=" * 60)
+            except Exception as e:
+                print(f"[Clipzy AI] Startup cookie reading error: {e}")
+        else:
+            print("[Clipzy AI] [COOKIES] No YouTube cookies found in ENV or Secret Files.")
+            print("[Clipzy AI] Note: Set YOUTUBE_COOKIES in Render Environment for server-wide bypass.")
+    except Exception as e:
+        print(f"[Clipzy AI] Startup error: {e}")
+
 @app.get("/favicon.ico", include_in_schema=False)
 def get_favicon():
     fav_file = STATIC_DIR / "favicon.ico"
@@ -58,16 +80,14 @@ def load_settings() -> Dict[str, Any]:
         except Exception:
             pass
             
-    # Auto-restore cookies.txt from settings if missing
+    # Auto-restore cookies from environment or disk if missing
     cookie_path = BASE_DIR / "cookies.txt"
     if not cookie_path.exists() or cookie_path.stat().st_size < 10:
-        saved_cookies = settings.get("youtube_cookies") or os.environ.get("YOUTUBE_COOKIES") or os.environ.get("YOUTUBE_COOKIE_CONTENT")
-        if saved_cookies and len(saved_cookies.strip()) > 20:
-            try:
-                with open(cookie_path, "w", encoding="utf-8") as f:
-                    f.write(saved_cookies.strip())
-            except Exception as e:
-                print(f"Error restoring cookies: {e}")
+        try:
+            from youtube import get_cookie_file
+            get_cookie_file()
+        except Exception:
+            pass
                 
     return settings
 
@@ -136,14 +156,13 @@ def get_settings_status():
     masked_key = f"{key[:4]}...{key[-4:]}" if has_key else ""
     
     # Auto-detect cookie from env vars, secret files, or disk
-    from youtube import get_cookie_file, is_valid_youtube_cookie_file
-    cookie_path = BASE_DIR / "cookies.txt"
-    if not cookie_path.exists():
-        cookie_path = get_cookie_file()
+    from youtube import get_cookie_file
+    cookie_path = get_cookie_file()
     
     cookie_lines = 0
     saved_cookies_text = ""
     is_yt = False
+    source = "None"
     
     if cookie_path and cookie_path.exists() and cookie_path.stat().st_size > 20:
         try:
@@ -152,6 +171,7 @@ def get_settings_status():
                 cookie_lines = len([l for l in content.splitlines() if l.strip() and not l.startswith("#")])
                 saved_cookies_text = content
                 is_yt = "youtube.com" in content
+                source = "Server Environment"
         except Exception:
             pass
             
@@ -161,6 +181,7 @@ def get_settings_status():
         "has_cookies": bool(cookie_lines > 0),
         "is_youtube_cookie": is_yt,
         "cookie_count": cookie_lines,
+        "source": source,
         "youtube_cookies": saved_cookies_text
     }
 
@@ -175,9 +196,16 @@ def update_settings(req: SettingsRequest):
     if req.youtube_cookies is not None:
         cookie_val = req.youtube_cookies.strip()
         if len(cookie_val) > 20:
-            settings["youtube_cookies"] = cookie_val
-            with open(cookie_path, "w", encoding="utf-8") as f:
-                f.write(cookie_val)
+            from youtube import normalize_cookie_text
+            normalized, count = normalize_cookie_text(cookie_val)
+            if count > 0:
+                settings["youtube_cookies"] = normalized
+                with open(cookie_path, "w", encoding="utf-8") as f:
+                    f.write(normalized)
+            else:
+                settings["youtube_cookies"] = cookie_val
+                with open(cookie_path, "w", encoding="utf-8") as f:
+                    f.write(cookie_val)
         elif len(cookie_val) == 0:
             settings.pop("youtube_cookies", None)
             if cookie_path.exists():

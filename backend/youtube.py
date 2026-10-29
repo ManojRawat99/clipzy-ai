@@ -62,15 +62,94 @@ def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
         "view_count": 0
     }
 
+def normalize_cookie_text(content: str) -> tuple[str, int]:
+    """
+    Normalizes cookies text into strict, valid Netscape format for yt-dlp.
+    Handles:
+    - Base64 encoding
+    - Escaped newlines and tabs (\\n, \\t)
+    - Space-separated lines (e.g. from Render dashboard input or copy-paste)
+    - Tab-separated lines
+    Returns (normalized_netscape_content, cookie_count)
+    """
+    if not content:
+        return "", 0
+        
+    raw = content.strip()
+    if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+        raw = raw[1:-1].strip()
+        
+    # Check if raw is base64 encoded
+    if ' ' not in raw and '\t' not in raw and '\n' not in raw and len(raw) > 30:
+        try:
+            import base64
+            decoded = base64.b64decode(raw).decode('utf-8', errors='ignore')
+            if 'youtube.com' in decoded:
+                raw = decoded
+        except Exception:
+            pass
+            
+    # Unescape literal string representations from cloud environment inputs
+    if "\\r\\n" in raw:
+        raw = raw.replace("\\r\\n", "\n")
+    if "\\n" in raw:
+        raw = raw.replace("\\n", "\n")
+    if "\\t" in raw:
+        raw = raw.replace("\\t", "\t")
+        
+    lines = raw.splitlines()
+    out = [
+        "# Netscape HTTP Cookie File",
+        "# https://curl.se/rfc/cookie_spec.html",
+        "# This is a generated file! Do not edit."
+    ]
+    valid_count = 0
+    
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+            
+        # Parse fields
+        if "\t" in line:
+            parts = line.split("\t")
+        else:
+            # Handle multiple spaces from copy-paste or Render dashboard
+            parts = line.split()
+            
+        if len(parts) >= 7:
+            domain = parts[0].strip()
+            subdomains = parts[1].strip().upper()
+            flag = "TRUE" if subdomains in ("TRUE", "1", "YES") else ("FALSE" if subdomains in ("FALSE", "0", "NO") else "TRUE")
+            path = parts[2].strip() or "/"
+            secure_val = parts[3].strip().upper()
+            secure = "TRUE" if secure_val in ("TRUE", "1", "YES") else ("FALSE" if secure_val in ("FALSE", "0", "NO") else "TRUE")
+            expiry = parts[4].strip()
+            if not expiry.isdigit():
+                expiry = "0"
+            name = parts[5].strip()
+            value = " ".join(parts[6:]).strip()
+            
+            # Filter for YouTube / Google domain cookies
+            if "youtube.com" in domain or "google.com" in domain:
+                out.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}")
+                valid_count += 1
+        elif len(parts) >= 5 and ("youtube.com" in parts[0] or "google.com" in parts[0]):
+            domain = parts[0].strip()
+            name = parts[-2].strip()
+            value = parts[-1].strip()
+            out.append(f"{domain}\tTRUE\t/\tTRUE\t0\t{name}\t{value}")
+            valid_count += 1
+
+    if valid_count > 0:
+        return "\n".join(out) + "\n", valid_count
+    return "", 0
+
 def is_valid_netscape_content(content: str) -> bool:
     if not content or len(content.strip()) < 20:
         return False
-    stripped = content.strip()
-    if stripped.startswith("{") or stripped.startswith("["):
-        return False
-    has_yt = "youtube.com" in content
-    has_tabs = "\t" in content or "\\t" in content
-    return has_yt and has_tabs
+    _, count = normalize_cookie_text(content)
+    return count > 0
 
 def is_valid_youtube_cookie_file(path: Path) -> bool:
     """Verify that the cookie file actually contains valid Netscape youtube.com cookies."""
@@ -78,71 +157,118 @@ def is_valid_youtube_cookie_file(path: Path) -> bool:
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
-                if is_valid_netscape_content(content):
-                    return True
-                else:
-                    try:
-                        path.unlink()
-                    except Exception:
-                        pass
+            _, count = normalize_cookie_text(content)
+            return count > 0
         except Exception:
             pass
     return False
 
 def get_cookie_file() -> Optional[Path]:
     """
-    Check if cookies are provided via:
-    1. Specific environment variable: YOUTUBE_COOKIES, YOUTUBE_COOKIE, YT_COOKIES
-    2. Render Secret File (/etc/secrets/cookies.txt)
-    3. Local cookies.txt file or settings.json
+    Locates YouTube cookies from:
+    1. ANY environment variable (YOUTUBE_COOKIES, YT_COOKIES, COOKIES, or any env containing youtube.com)
+    2. Render Secret Files (/etc/secrets/cookies.txt, /etc/secrets/*)
+    3. settings.json or local cookies.txt
+    Normalizes them automatically into strict Netscape format and saves to BASE_DIR / 'cookies.txt'.
     """
-    allowed_keys = ("YOUTUBE_COOKIES", "YOUTUBE_COOKIE", "YT_COOKIES", "COOKIES_TXT")
-    cookie_env = None
-    for k, v in os.environ.items():
-        if k.upper() in allowed_keys and is_valid_netscape_content(v):
-            cookie_env = v
+    target = BASE_DIR / "cookies.txt"
+
+    # 1. First, check environment variables
+    priority_keys = [
+        "YOUTUBE_COOKIES", "YOUTUBE_COOKIE", "YT_COOKIES", "YT_COOKIE",
+        "COOKIES_TXT", "COOKIE_FILE", "COOKIES", "COOKIE", "YOUTUBE_COOKIES_TXT"
+    ]
+    env_content = None
+    matched_key = None
+    for k in priority_keys:
+        val = os.environ.get(k)
+        if val and len(val.strip()) > 20:
+            env_content = val
+            matched_key = k
             break
+            
+    if not env_content:
+        # Search all env vars for any variable with youtube cookies (ignore json objects)
+        for k, v in os.environ.items():
+            if not v or len(v.strip()) < 30:
+                continue
+            stripped = v.strip()
+            if stripped.startswith("{") or stripped.startswith("["):
+                continue
+            if "youtube.com" in v and ("LOGIN_INFO" in v or "SID" in v or "PREF" in v or "TRUE" in v):
+                env_content = v
+                matched_key = k
+                break
+                
+    if env_content:
+        normalized, count = normalize_cookie_text(env_content)
+        if count > 0:
+            try:
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write(normalized)
+                try:
+                    print(f"[Clipzy AI] [COOKIES] Loaded {count} YouTube cookies from environment variable '{matched_key}'")
+                except Exception:
+                    pass
+                return target
+            except Exception as e:
+                try:
+                    print(f"Error writing normalized cookie from env '{matched_key}': {e}")
+                except Exception:
+                    pass
 
-    if cookie_env:
-        env_cookie_path = BASE_DIR / "cookies.txt"
-        try:
-            cleaned = cookie_env.strip()
-            if (cleaned.startswith('"') and cleaned.endswith('"')) or (cleaned.startswith("'") and cleaned.endswith("'")):
-                cleaned = cleaned[1:-1]
-            if "\\n" in cleaned:
-                cleaned = cleaned.replace("\\n", "\n")
-            if "\\t" in cleaned:
-                cleaned = cleaned.replace("\\t", "\t")
-            with open(env_cookie_path, "w", encoding="utf-8") as f:
-                f.write(cleaned)
-            if is_valid_youtube_cookie_file(env_cookie_path):
-                return env_cookie_path
-        except Exception as e:
-            print(f"Error writing cookie from env: {e}")
-
-    candidates = [
+    # 2. Check Render Secret Files and known file paths
+    candidate_paths = [
         Path("/etc/secrets/cookies.txt"),
         Path("/etc/secrets/youtube_cookies.txt"),
+        Path("/etc/secrets/cookies"),
         BASE_DIR / "cookies.txt",
         BASE_DIR / "backend" / "cookies.txt",
         Path("/app/cookies.txt")
     ]
-    for c in candidates:
-        if is_valid_youtube_cookie_file(c):
-            return c
+    
+    # Also scan /etc/secrets/ directory if present
+    secrets_dir = Path("/etc/secrets")
+    if secrets_dir.is_dir():
+        try:
+            for f in secrets_dir.glob("*"):
+                if f.is_file() and f not in candidate_paths:
+                    candidate_paths.append(f)
+        except Exception:
+            pass
+                
+    for path in candidate_paths:
+        if path.exists() and path.stat().st_size > 20:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                normalized, count = normalize_cookie_text(content)
+                if count > 0:
+                    if path != target:
+                        with open(target, "w", encoding="utf-8") as f:
+                            f.write(normalized)
+                        try:
+                            print(f"[Clipzy AI] [COOKIES] Loaded {count} YouTube cookies from secret file: {path}")
+                        except Exception:
+                            pass
+                        return target
+                    return path
+            except Exception:
+                pass
 
-    # Also check settings.json
+    # 3. Check settings.json
     settings_file = BASE_DIR / "settings.json"
     if settings_file.exists():
         try:
             with open(settings_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 val = data.get("youtube_cookies", "")
-                if is_valid_netscape_content(val):
-                    target = BASE_DIR / "cookies.txt"
-                    with open(target, "w", encoding="utf-8") as wf:
-                        wf.write(val.strip())
-                    return target
+                if val:
+                    normalized, count = normalize_cookie_text(val)
+                    if count > 0:
+                        with open(target, "w", encoding="utf-8") as f:
+                            f.write(normalized)
+                        return target
         except Exception:
             pass
 

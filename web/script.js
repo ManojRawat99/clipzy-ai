@@ -378,7 +378,8 @@ async function loadSettings() {
         if (data.is_youtube_cookie) {
           statusParts.push(`🍪 Cookies: Active (${data.cookie_count})`);
           if (cookieStatusBadge) {
-            cookieStatusBadge.innerHTML = `✅ <strong>Cookies Active:</strong> ${data.cookie_count} YouTube cookies loaded.`;
+            const srcText = data.source && data.source !== "None" ? ` (${data.source})` : "";
+            cookieStatusBadge.innerHTML = `✅ <strong>Cookies Active:</strong> ${data.cookie_count} YouTube cookies loaded${srcText}.`;
             cookieStatusBadge.style.background = "rgba(16, 185, 129, 0.15)";
             cookieStatusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
             cookieStatusBadge.style.color = "#34d399";
