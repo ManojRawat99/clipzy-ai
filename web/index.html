@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0c10">
   <title>Clipzy AI Studio - YouTube to Viral Shorts & Reels</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="style.css">
@@ -14,13 +17,16 @@
       <div class="brand">
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
-          <h1>Clipzy AI Studio</h1>
-          <span>Autonomous Viral Video Repurposing</span>
+          <h1>Clipzy AI</h1>
+          <span class="desktop-only">Autonomous Viral Video Repurposing</span>
         </div>
       </div>
       <div class="nav-actions">
-        <span class="badge free-badge">100% Free & Local</span>
-        <button id="openSettingsBtn" class="btn-icon-text">⚙️ Settings</button>
+        <span class="badge free-badge desktop-only">100% Free Cloud</span>
+        <button id="openSettingsBtn" class="btn-icon-text">
+          <span class="icon">⚙️</span>
+          <span class="desktop-only">Settings</span>
+        </button>
       </div>
     </header>
 
@@ -29,47 +35,53 @@
       <!-- Hero / Input Card -->
       <section class="card input-card">
         <div class="card-header">
-          <h2>Create Viral Shorts & Reels from YouTube</h2>
-          <p>Paste a YouTube video link. AI finds the top highlights, tracks faces for 9:16 vertical crop, and burns animated captions.</p>
+          <h2>Create Viral Shorts & Reels</h2>
+          <p>Paste a YouTube video link. AI finds the top highlights, tracks faces, and burns animated captions.</p>
         </div>
 
         <div class="url-input-group">
           <div class="input-wrapper">
             <span class="input-icon">🔗</span>
             <input 
-              type="text" 
+              type="url" 
               id="youtubeUrl" 
-              placeholder="https://www.youtube.com/watch?v=..." 
+              placeholder="Paste YouTube link here..." 
               autocomplete="off"
+              inputmode="url"
             />
+            <button id="pasteBtn" type="button" class="btn-inline-paste" title="Paste from clipboard">
+              <span>📋 Paste</span>
+            </button>
           </div>
           <button id="clipBtn" class="btn-generate">
-            <span>⚡ Generate Viral Clips</span>
+            <span class="btn-icon">⚡</span>
+            <span>Generate Viral Clips</span>
           </button>
         </div>
 
-        <!-- Controls Row -->
-        <div class="controls-row">
-          <div class="control-item">
-            <label>Number of Clips:</label>
-            <select id="clipCount">
-              <option value="1">1 Top Clip</option>
-              <option value="3" selected>3 Viral Clips</option>
-              <option value="5">5 Highlights</option>
-            </select>
+        <!-- Controls Grid -->
+        <div class="controls-grid">
+          <div class="control-box">
+            <label for="aspectRatio">Aspect Ratio</label>
+            <div class="select-wrapper">
+              <select id="aspectRatio">
+                <option value="9:16" selected>📱 9:16 Vertical (Shorts/Reels)</option>
+                <option value="1:1">🟦 1:1 Square (Instagram/X)</option>
+                <option value="4:5">🖼️ 4:5 Portrait (Feed)</option>
+                <option value="16:9">💻 16:9 Landscape (YouTube)</option>
+              </select>
+            </div>
           </div>
-          <div class="control-item">
-            <label>Aspect Ratio:</label>
-            <select id="aspectRatio">
-              <option value="9:16" selected>📱 9:16 Vertical (Shorts/Reels/TikTok)</option>
-              <option value="1:1">🟦 1:1 Square (Instagram/LinkedIn/X)</option>
-              <option value="4:5">🖼️ 4:5 Portrait (Instagram Feed)</option>
-              <option value="16:9">💻 16:9 Landscape (YouTube/Twitter)</option>
-            </select>
-          </div>
-          <div class="control-item">
-            <label>Subtitles:</label>
-            <span class="format-pill">✨ Yellow Karaoke Highlight</span>
+
+          <div class="control-box">
+            <label for="clipCount">Number of Clips</label>
+            <div class="select-wrapper">
+              <select id="clipCount">
+                <option value="1">1 Top Clip</option>
+                <option value="3" selected>3 Viral Clips</option>
+                <option value="5">5 Highlights</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -84,9 +96,9 @@
           </div>
           <div class="pipeline-steps">
             <div class="step" id="step-dl"><span>1</span> Download</div>
-            <div class="step" id="step-ai"><span>2</span> AI Hook Scoring</div>
-            <div class="step" id="step-crop"><span>3</span> 9:16 Face Track</div>
-            <div class="step" id="step-sub"><span>4</span> Viral Captions</div>
+            <div class="step" id="step-ai"><span>2</span> Hook Score</div>
+            <div class="step" id="step-crop"><span>3</span> Face Track</div>
+            <div class="step" id="step-sub"><span>4</span> Captions</div>
           </div>
         </div>
       </section>
@@ -128,4 +140,3 @@
   <script src="script.js"></script>
 </body>
 </html>
-

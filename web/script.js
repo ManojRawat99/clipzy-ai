@@ -1,6 +1,7 @@
 let pollTimer = null;
 
 const youtubeUrlInput = document.getElementById("youtubeUrl");
+const pasteBtn = document.getElementById("pasteBtn");
 const clipBtn = document.getElementById("clipBtn");
 const clipCountSelect = document.getElementById("clipCount");
 const aspectRatioSelect = document.getElementById("aspectRatio");
@@ -29,6 +30,24 @@ const settingsStatusMsg = document.getElementById("settingsStatusMsg");
 document.addEventListener("DOMContentLoaded", () => {
   loadClips();
   loadSettings();
+
+  if (pasteBtn) {
+    pasteBtn.addEventListener("click", async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            youtubeUrlInput.value = text.trim();
+            youtubeUrlInput.focus();
+            return;
+          }
+        }
+      } catch (e) {
+        console.log("Clipboard read restricted, focusing input");
+      }
+      youtubeUrlInput.focus();
+    });
+  }
 });
 
 // Load existing clips
