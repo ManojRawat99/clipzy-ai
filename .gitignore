@@ -1,0 +1,8 @@
+backend/ffmpeg.exe
+output/
+temp/
+__pycache__/
+*.pyc
+.env
+settings.json
+cloudflared.exe
