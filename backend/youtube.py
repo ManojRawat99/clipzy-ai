@@ -89,10 +89,10 @@ def get_cookie_file() -> Optional[Path]:
 
 def get_video_info(url: str) -> Dict[str, Any]:
     """
-    Fetch video metadata with pure Android client rotation and instant oEmbed fallback.
-    Android client never triggers bot challenges on datacenter IPs.
+    Fetch video metadata with multi-client rotation and instant oEmbed fallback.
     """
     video_id = extract_video_id(url)
+    cookie_path = get_cookie_file()
     
     ydl_opts = {
         'skip_download': True,
@@ -101,18 +101,17 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'extract_flat': False,
         'geo_bypass': True,
         'geo_bypass_country': 'US',
-        'http_headers': ANDROID_HEADERS,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android'],
-                'player_skip': ['web', 'web_safari', 'mweb', 'ios', 'tv', 'configs']
-            }
-        }
+        'http_headers': ANDROID_HEADERS
     }
     
-    cookie_path = get_cookie_file()
     if cookie_path:
         ydl_opts['cookiefile'] = str(cookie_path)
+    else:
+        ydl_opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['android', 'ios']
+            }
+        }
         
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -199,79 +198,79 @@ def get_transcript(video_id: str) -> List[Dict[str, Any]]:
 def download_video(url: str, output_path: Path) -> Path:
     """
     Download video in MP4 format.
-    Pure Android client bypass avoids 'Sign in to confirm you are not a bot' on Datacenter IPs.
+    Multi-pass strategy with dynamic cookie and client handling guarantees format availability.
     """
     output_template = str(output_path.with_suffix('')) + ".%(ext)s"
     cookie_path = get_cookie_file()
     
-    # Layer 1: Pure Android Client (Format 18: single MP4 stream, zero bot check on datacenter IPs)
+    # Layer 1: Best quality MP4 download
     opts_layer1 = {
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
         'geo_bypass_country': 'US',
         'http_headers': ANDROID_HEADERS,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android'],
-                'player_skip': ['web', 'web_safari', 'mweb', 'ios', 'tv', 'tv_downgraded', 'configs']
-            }
-        },
-        'format': '18/best[ext=mp4]/best',
+        'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/bestvideo+bestaudio/best',
         'outtmpl': output_template,
+        'merge_output_format': 'mp4',
         'quiet': False,
         'no_warnings': True
     }
     if cookie_path:
         opts_layer1['cookiefile'] = str(cookie_path)
+    else:
+        opts_layer1['extractor_args'] = {
+            'youtube': {
+                'player_client': ['android', 'ios']
+            }
+        }
         
     try:
         with yt_dlp.YoutubeDL(opts_layer1) as ydl:
             ydl.download([url])
     except Exception as e1:
-        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Android adaptive formats)...")
-        # Layer 2: Android adaptive 720p/1080p
+        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Single-stream / Format 18)...")
+        # Layer 2: Android / iOS Format 18 or direct single-stream MP4
         opts_layer2 = {
             'ffmpeg_location': str(FFMPEG_PATH),
             'geo_bypass': True,
             'geo_bypass_country': 'IN',
             'http_headers': ANDROID_HEADERS,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android'],
-                    'player_skip': ['web', 'web_safari', 'mweb', 'ios', 'tv', 'configs']
-                }
-            },
-            'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': '18/best[ext=mp4]/best',
             'outtmpl': output_template,
-            'merge_output_format': 'mp4',
             'quiet': False,
             'no_warnings': True
         }
         if cookie_path:
             opts_layer2['cookiefile'] = str(cookie_path)
+        else:
+            opts_layer2['extractor_args'] = {
+                'youtube': {
+                    'player_client': ['android', 'ios']
+                }
+            }
             
         try:
             with yt_dlp.YoutubeDL(opts_layer2) as ydl:
                 ydl.download([url])
         except Exception as e2:
-            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Universal worst/best MP4)...")
+            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Universal fallback)...")
             # Layer 3: Universal fallback
             opts_layer3 = {
                 'ffmpeg_location': str(FFMPEG_PATH),
                 'geo_bypass': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android'],
-                        'player_skip': ['web', 'web_safari']
-                    }
-                },
-                'format': 'worst[ext=mp4]/worst',
+                'format': 'best/worst',
                 'outtmpl': output_template,
                 'quiet': False,
                 'no_warnings': True
             }
             if cookie_path:
                 opts_layer3['cookiefile'] = str(cookie_path)
+            else:
+                opts_layer3['extractor_args'] = {
+                    'youtube': {
+                        'player_client': ['android']
+                    }
+                }
             with yt_dlp.YoutubeDL(opts_layer3) as ydl:
                 ydl.download([url])
         
