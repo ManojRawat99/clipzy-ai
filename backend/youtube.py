@@ -1,6 +1,7 @@
 import re
 import os
 import json
+import shutil
 import urllib.request
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -288,6 +289,7 @@ def get_video_info(url: str) -> Dict[str, Any]:
     """
     video_id = extract_video_id(url)
     cookie_path = get_cookie_file()
+    node_bin = shutil.which("node") or shutil.which("nodejs")
     
     ydl_opts = {
         'skip_download': True,
@@ -295,18 +297,20 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
-        'geo_bypass_country': 'US'
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android_vr', 'android', 'web']
+            }
+        }
     }
     
+    if node_bin:
+        ydl_opts['js_runtimes'] = {'node': {}}
+        
     if cookie_path:
         ydl_opts['cookiefile'] = str(cookie_path)
     else:
         ydl_opts['http_headers'] = ANDROID_HEADERS
-        ydl_opts['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios']
-            }
-        }
         
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -393,58 +397,67 @@ def get_transcript(video_id: str) -> List[Dict[str, Any]]:
 def download_video(url: str, output_path: Path) -> Path:
     """
     Download video in MP4 format.
-    Multi-pass strategy with dynamic cookie and client handling guarantees format availability.
+    Multi-pass strategy with dynamic client and format fallback guarantees availability.
     """
     output_template = str(output_path.with_suffix('')) + ".%(ext)s"
     cookie_path = get_cookie_file()
+    node_bin = shutil.which("node") or shutil.which("nodejs")
     
-    # Universal format: selects best 1080p video+audio, or 720p, or single-stream 18, merged into MP4
-    universal_format = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/18/bestvideo+bestaudio/best'
+    # Universal multi-client configuration
+    client_list = ['android_vr', 'android', 'web']
     
-    # Layer 1: Best available stream (Web or Android depending on cookie availability)
+    # Universal format: best video (up to 1080p) + best audio, or best 720p, or single stream 18, or best
+    universal_format = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/18/best'
+    
+    # Layer 1: Best available stream using android_vr + android + web clients
     opts_layer1 = {
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
-        'geo_bypass_country': 'US',
         'format': universal_format,
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
         'quiet': False,
-        'no_warnings': True
+        'no_warnings': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': client_list
+            }
+        }
     }
+    if node_bin:
+        opts_layer1['js_runtimes'] = {'node': {}}
+        
     if cookie_path:
         opts_layer1['cookiefile'] = str(cookie_path)
     else:
         opts_layer1['http_headers'] = ANDROID_HEADERS
-        opts_layer1['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios']
-            }
-        }
         
     try:
         with yt_dlp.YoutubeDL(opts_layer1) as ydl:
             ydl.download([url])
     except Exception as e1:
-        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Android Format 18 single stream)...")
-        # Layer 2: Android / iOS Format 18 direct MP4 stream
+        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Single-stream / Format 18)...")
+        # Layer 2: Single-stream Format 18 or 720p direct stream
         opts_layer2 = {
             'ffmpeg_location': str(FFMPEG_PATH),
             'geo_bypass': True,
-            'geo_bypass_country': 'IN',
-            'http_headers': ANDROID_HEADERS,
             'format': '18/best[height<=720]/best',
             'outtmpl': output_template,
             'quiet': False,
             'no_warnings': True,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android']
+                    'player_client': ['android', 'android_vr', 'web']
                 }
             }
         }
+        if node_bin:
+            opts_layer2['js_runtimes'] = {'node': {}}
+            
         if cookie_path:
             opts_layer2['cookiefile'] = str(cookie_path)
+        else:
+            opts_layer2['http_headers'] = ANDROID_HEADERS
             
         try:
             with yt_dlp.YoutubeDL(opts_layer2) as ydl:
@@ -460,6 +473,8 @@ def download_video(url: str, output_path: Path) -> Path:
                 'quiet': False,
                 'no_warnings': True
             }
+            if node_bin:
+                opts_layer3['js_runtimes'] = {'node': {}}
             if cookie_path:
                 opts_layer3['cookiefile'] = str(cookie_path)
             with yt_dlp.YoutubeDL(opts_layer3) as ydl:
