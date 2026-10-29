@@ -62,12 +62,29 @@ def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
         "view_count": 0
     }
 
+def is_valid_netscape_content(content: str) -> bool:
+    if not content or len(content.strip()) < 20:
+        return False
+    stripped = content.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        return False
+    has_yt = "youtube.com" in content
+    has_tabs = "\t" in content or "\\t" in content
+    return has_yt and has_tabs
+
 def is_valid_youtube_cookie_file(path: Path) -> bool:
-    """Verify that the cookie file actually contains youtube.com cookies."""
+    """Verify that the cookie file actually contains valid Netscape youtube.com cookies."""
     if path.exists() and path.stat().st_size > 20:
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                return "youtube.com" in f.read()
+                content = f.read()
+                if is_valid_netscape_content(content):
+                    return True
+                else:
+                    try:
+                        path.unlink()
+                    except Exception:
+                        pass
         except Exception:
             pass
     return False
@@ -75,23 +92,21 @@ def is_valid_youtube_cookie_file(path: Path) -> bool:
 def get_cookie_file() -> Optional[Path]:
     """
     Check if cookies are provided via:
-    1. Any environment variable containing YouTube cookies
+    1. Specific environment variable: YOUTUBE_COOKIES, YOUTUBE_COOKIE, YT_COOKIES
     2. Render Secret File (/etc/secrets/cookies.txt)
     3. Local cookies.txt file or settings.json
     """
+    allowed_keys = ("YOUTUBE_COOKIES", "YOUTUBE_COOKIE", "YT_COOKIES", "COOKIES_TXT")
     cookie_env = None
     for k, v in os.environ.items():
-        if "youtube.com" in v and len(v) > 20:
+        if k.upper() in allowed_keys and is_valid_netscape_content(v):
             cookie_env = v
             break
-        elif "COOKIE" in k.upper() and len(v.strip()) > 20:
-            cookie_env = v
 
-    if cookie_env and len(cookie_env.strip()) > 20:
+    if cookie_env:
         env_cookie_path = BASE_DIR / "cookies.txt"
         try:
             cleaned = cookie_env.strip()
-            # Handle quotes, escaped newlines/tabs from cloud dashboard inputs
             if (cleaned.startswith('"') and cleaned.endswith('"')) or (cleaned.startswith("'") and cleaned.endswith("'")):
                 cleaned = cleaned[1:-1]
             if "\\n" in cleaned:
@@ -123,7 +138,7 @@ def get_cookie_file() -> Optional[Path]:
             with open(settings_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 val = data.get("youtube_cookies", "")
-                if val and "youtube.com" in val:
+                if is_valid_netscape_content(val):
                     target = BASE_DIR / "cookies.txt"
                     with open(target, "w", encoding="utf-8") as wf:
                         wf.write(val.strip())
@@ -146,13 +161,13 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
-        'geo_bypass_country': 'US',
-        'http_headers': ANDROID_HEADERS
+        'geo_bypass_country': 'US'
     }
     
     if cookie_path:
         ydl_opts['cookiefile'] = str(cookie_path)
     else:
+        ydl_opts['http_headers'] = ANDROID_HEADERS
         ydl_opts['extractor_args'] = {
             'youtube': {
                 'player_client': ['android', 'ios']
@@ -249,13 +264,15 @@ def download_video(url: str, output_path: Path) -> Path:
     output_template = str(output_path.with_suffix('')) + ".%(ext)s"
     cookie_path = get_cookie_file()
     
-    # Layer 1: Best quality MP4 download
+    # Universal format: selects best 1080p video+audio, or 720p, or single-stream 18, merged into MP4
+    universal_format = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/18/bestvideo+bestaudio/best'
+    
+    # Layer 1: Best available stream (Web or Android depending on cookie availability)
     opts_layer1 = {
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
         'geo_bypass_country': 'US',
-        'http_headers': ANDROID_HEADERS,
-        'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/bestvideo+bestaudio/best',
+        'format': universal_format,
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
         'quiet': False,
@@ -264,6 +281,7 @@ def download_video(url: str, output_path: Path) -> Path:
     if cookie_path:
         opts_layer1['cookiefile'] = str(cookie_path)
     else:
+        opts_layer1['http_headers'] = ANDROID_HEADERS
         opts_layer1['extractor_args'] = {
             'youtube': {
                 'player_client': ['android', 'ios']
@@ -274,26 +292,25 @@ def download_video(url: str, output_path: Path) -> Path:
         with yt_dlp.YoutubeDL(opts_layer1) as ydl:
             ydl.download([url])
     except Exception as e1:
-        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Single-stream / Format 18)...")
-        # Layer 2: Android / iOS Format 18 or direct single-stream MP4
+        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Android Format 18 single stream)...")
+        # Layer 2: Android / iOS Format 18 direct MP4 stream
         opts_layer2 = {
             'ffmpeg_location': str(FFMPEG_PATH),
             'geo_bypass': True,
             'geo_bypass_country': 'IN',
             'http_headers': ANDROID_HEADERS,
-            'format': '18/best[ext=mp4]/best',
+            'format': '18/best[height<=720]/best',
             'outtmpl': output_template,
             'quiet': False,
-            'no_warnings': True
+            'no_warnings': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android']
+                }
+            }
         }
         if cookie_path:
             opts_layer2['cookiefile'] = str(cookie_path)
-        else:
-            opts_layer2['extractor_args'] = {
-                'youtube': {
-                    'player_client': ['android', 'ios']
-                }
-            }
             
         try:
             with yt_dlp.YoutubeDL(opts_layer2) as ydl:
@@ -311,12 +328,6 @@ def download_video(url: str, output_path: Path) -> Path:
             }
             if cookie_path:
                 opts_layer3['cookiefile'] = str(cookie_path)
-            else:
-                opts_layer3['extractor_args'] = {
-                    'youtube': {
-                        'player_client': ['android']
-                    }
-                }
             with yt_dlp.YoutubeDL(opts_layer3) as ydl:
                 ydl.download([url])
         
