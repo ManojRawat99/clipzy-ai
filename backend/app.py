@@ -136,11 +136,14 @@ def get_settings_status():
     masked_key = f"{key[:4]}...{key[-4:]}" if has_key else ""
     
     # Auto-detect cookie from env vars, secret files, or disk
-    from youtube import get_cookie_file
-    cookie_path = get_cookie_file()
+    from youtube import get_cookie_file, is_valid_youtube_cookie_file
+    cookie_path = BASE_DIR / "cookies.txt"
+    if not cookie_path.exists():
+        cookie_path = get_cookie_file()
     
     cookie_lines = 0
     saved_cookies_text = ""
+    is_yt = False
     
     if cookie_path and cookie_path.exists() and cookie_path.stat().st_size > 20:
         try:
@@ -148,6 +151,7 @@ def get_settings_status():
                 content = f.read()
                 cookie_lines = len([l for l in content.splitlines() if l.strip() and not l.startswith("#")])
                 saved_cookies_text = content
+                is_yt = "youtube.com" in content
         except Exception:
             pass
             
@@ -155,6 +159,7 @@ def get_settings_status():
         "has_gemini_key": has_key,
         "masked_key": masked_key,
         "has_cookies": bool(cookie_lines > 0),
+        "is_youtube_cookie": is_yt,
         "cookie_count": cookie_lines,
         "youtube_cookies": saved_cookies_text
     }

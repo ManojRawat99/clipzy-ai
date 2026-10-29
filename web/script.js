@@ -375,12 +375,22 @@ async function loadSettings() {
         statusParts.push(`Gemini: ${data.masked_key}`);
       }
       if (data.has_cookies) {
-        statusParts.push(`🍪 Cookies: Active (${data.cookie_count})`);
-        if (cookieStatusBadge) {
-          cookieStatusBadge.innerHTML = `✅ <strong>Cookies Active:</strong> ${data.cookie_count} YouTube cookies loaded.`;
-          cookieStatusBadge.style.background = "rgba(16, 185, 129, 0.15)";
-          cookieStatusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
-          cookieStatusBadge.style.color = "#34d399";
+        if (data.is_youtube_cookie) {
+          statusParts.push(`🍪 Cookies: Active (${data.cookie_count})`);
+          if (cookieStatusBadge) {
+            cookieStatusBadge.innerHTML = `✅ <strong>Cookies Active:</strong> ${data.cookie_count} YouTube cookies loaded.`;
+            cookieStatusBadge.style.background = "rgba(16, 185, 129, 0.15)";
+            cookieStatusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
+            cookieStatusBadge.style.color = "#34d399";
+          }
+        } else {
+          statusParts.push(`⚠️ Invalid Cookies Domain`);
+          if (cookieStatusBadge) {
+            cookieStatusBadge.innerHTML = `⚠️ <strong>Wrong Cookies:</strong> These are cookies for another site, NOT youtube.com! Please open youtube.com and copy cookies from that tab.`;
+            cookieStatusBadge.style.background = "rgba(244, 63, 94, 0.15)";
+            cookieStatusBadge.style.borderColor = "rgba(244, 63, 94, 0.4)";
+            cookieStatusBadge.style.color = "#fb7185";
+          }
         }
         if (clearCookiesBtn) clearCookiesBtn.classList.remove("hidden");
         if (cookiesInput && data.youtube_cookies) {
