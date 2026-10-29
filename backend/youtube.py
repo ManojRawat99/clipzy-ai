@@ -299,7 +299,7 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'geo_bypass': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_vr', 'android', 'web']
+                'player_client': ['android_vr', 'android']
             }
         }
     }
@@ -403,13 +403,13 @@ def download_video(url: str, output_path: Path) -> Path:
     cookie_path = get_cookie_file()
     node_bin = shutil.which("node") or shutil.which("nodejs")
     
-    # Universal multi-client configuration
-    client_list = ['android_vr', 'android', 'web']
+    # Pure mobile & VR player clients (immune to datacenter web bot-checks)
+    client_list = ['android_vr', 'android']
     
     # Universal format: best video (up to 1080p) + best audio, or best 720p, or single stream 18, or best
     universal_format = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/18/best'
     
-    # Layer 1: Best available stream using android_vr + android + web clients
+    # Layer 1: Best available stream with cookies (if available)
     opts_layer1 = {
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
@@ -436,49 +436,76 @@ def download_video(url: str, output_path: Path) -> Path:
         with yt_dlp.YoutubeDL(opts_layer1) as ydl:
             ydl.download([url])
     except Exception as e1:
-        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Single-stream / Format 18)...")
-        # Layer 2: Single-stream Format 18 or 720p direct stream
+        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Pure Android VR/Android WITHOUT cookies)...")
+        # Clean any partial/broken downloads
+        for p in output_path.parent.glob(f"{output_path.stem}*"):
+            if p.name.endswith(".part") or p.name.endswith(".ytdl"):
+                try: p.unlink()
+                except Exception: pass
+        # Layer 2: Bypass cookies completely using Android VR / Android client (never blocked by bot-checks)
         opts_layer2 = {
             'ffmpeg_location': str(FFMPEG_PATH),
             'geo_bypass': True,
-            'format': '18/best[height<=720]/best',
+            'format': universal_format,
             'outtmpl': output_template,
+            'merge_output_format': 'mp4',
             'quiet': False,
             'no_warnings': True,
+            'http_headers': ANDROID_HEADERS,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'android_vr', 'web']
+                    'player_client': ['android_vr', 'android']
                 }
             }
         }
         if node_bin:
             opts_layer2['js_runtimes'] = {'node': {}}
             
-        if cookie_path:
-            opts_layer2['cookiefile'] = str(cookie_path)
-        else:
-            opts_layer2['http_headers'] = ANDROID_HEADERS
-            
         try:
             with yt_dlp.YoutubeDL(opts_layer2) as ydl:
                 ydl.download([url])
         except Exception as e2:
-            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Universal fallback)...")
-            # Layer 3: Universal fallback
+            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Format 18 single-stream MP4)...")
+            # Clean any partial/broken downloads
+            for p in output_path.parent.glob(f"{output_path.stem}*"):
+                if p.name.endswith(".part") or p.name.endswith(".ytdl"):
+                    try: p.unlink()
+                    except Exception: pass
+            # Layer 3: Direct single-stream Format 18
             opts_layer3 = {
                 'ffmpeg_location': str(FFMPEG_PATH),
                 'geo_bypass': True,
-                'format': 'best/worst',
+                'format': '18/best[height<=720]/best',
                 'outtmpl': output_template,
                 'quiet': False,
-                'no_warnings': True
+                'no_warnings': True,
+                'http_headers': ANDROID_HEADERS,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'android_vr']
+                    }
+                }
             }
             if node_bin:
                 opts_layer3['js_runtimes'] = {'node': {}}
-            if cookie_path:
-                opts_layer3['cookiefile'] = str(cookie_path)
-            with yt_dlp.YoutubeDL(opts_layer3) as ydl:
-                ydl.download([url])
+            try:
+                with yt_dlp.YoutubeDL(opts_layer3) as ydl:
+                    ydl.download([url])
+            except Exception as e3:
+                print(f"Layer 3 download note: {e3}. Retrying with Layer 4 (Universal fallback)...")
+                # Layer 4: Universal fallback
+                opts_layer4 = {
+                    'ffmpeg_location': str(FFMPEG_PATH),
+                    'geo_bypass': True,
+                    'format': 'best/worst',
+                    'outtmpl': output_template,
+                    'quiet': False,
+                    'no_warnings': True
+                }
+                if node_bin:
+                    opts_layer4['js_runtimes'] = {'node': {}}
+                with yt_dlp.YoutubeDL(opts_layer4) as ydl:
+                    ydl.download([url])
         
     final_mp4 = output_path.with_suffix('.mp4')
     if final_mp4.exists():
