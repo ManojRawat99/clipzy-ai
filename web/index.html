@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clipzy AI Studio - YouTube to Viral Shorts & Reels</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>Clipzy AI Studio</h1>
+          <span>Autonomous Viral Video Repurposing</span>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <span class="badge free-badge">100% Free & Local</span>
+        <button id="openSettingsBtn" class="btn-icon-text">⚙️ Settings</button>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+      <!-- Hero / Input Card -->
+      <section class="card input-card">
+        <div class="card-header">
+          <h2>Create Viral Shorts & Reels from YouTube</h2>
+          <p>Paste a YouTube video link. AI finds the top highlights, tracks faces for 9:16 vertical crop, and burns animated captions.</p>
+        </div>
+
+        <div class="url-input-group">
+          <div class="input-wrapper">
+            <span class="input-icon">🔗</span>
+            <input 
+              type="text" 
+              id="youtubeUrl" 
+              placeholder="https://www.youtube.com/watch?v=..." 
+              autocomplete="off"
+            />
+          </div>
+          <button id="clipBtn" class="btn-generate">
+            <span>⚡ Generate Viral Clips</span>
+          </button>
+        </div>
+
+        <!-- Controls Row -->
+        <div class="controls-row">
+          <div class="control-item">
+            <label>Number of Clips:</label>
+            <select id="clipCount">
+              <option value="1">1 Top Clip</option>
+              <option value="3" selected>3 Viral Clips</option>
+              <option value="5">5 Highlights</option>
+            </select>
+          </div>
+          <div class="control-item">
+            <label>Aspect Ratio:</label>
+            <select id="aspectRatio">
+              <option value="9:16" selected>📱 9:16 Vertical (Shorts/Reels/TikTok)</option>
+              <option value="1:1">🟦 1:1 Square (Instagram/LinkedIn/X)</option>
+              <option value="4:5">🖼️ 4:5 Portrait (Instagram Feed)</option>
+              <option value="16:9">💻 16:9 Landscape (YouTube/Twitter)</option>
+            </select>
+          </div>
+          <div class="control-item">
+            <label>Subtitles:</label>
+            <span class="format-pill">✨ Yellow Karaoke Highlight</span>
+          </div>
+        </div>
+
+        <!-- Live Progress Section -->
+        <div id="progressBox" class="progress-box hidden">
+          <div class="progress-info">
+            <span id="progressStatusText">Extracting transcript & audio...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressBar" class="progress-fill"></div>
+          </div>
+          <div class="pipeline-steps">
+            <div class="step" id="step-dl"><span>1</span> Download</div>
+            <div class="step" id="step-ai"><span>2</span> AI Hook Scoring</div>
+            <div class="step" id="step-crop"><span>3</span> 9:16 Face Track</div>
+            <div class="step" id="step-sub"><span>4</span> Viral Captions</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Results Grid -->
+      <section class="clips-section">
+        <div class="section-title">
+          <h2>Ready Viral Clips</h2>
+          <span id="clipCountBadge" class="count-badge">0 Clips</span>
+        </div>
+
+        <div id="clipsGrid" class="clips-grid">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>⚙️ Clipzy AI Settings</h3>
+          <button id="closeSettingsBtn" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <label for="geminiKeyInput">Google Gemini API Key (Optional)</label>
+          <p class="modal-hint">
+            Get a free key at <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>.
+            If left blank, Clipzy automatically uses its built-in free Smart NLP Hook Analyzer.
+          </p>
+          <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." />
+          <button id="saveSettingsBtn" class="btn-primary" style="margin-top: 14px;">Save Settings</button>
+          <div id="settingsStatusMsg" class="status-msg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,8 @@
+output/
+temp/
+__pycache__/
+*.pyc
+.git
+.gitignore
+backend/ffmpeg.exe
+
