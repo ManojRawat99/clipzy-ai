@@ -220,15 +220,21 @@
           <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." autocomplete="off" />
 
           <div style="margin-top: 18px;">
-            <label for="cookiesInput">YouTube Cookies (Optional - Bypasses Cloud IP Bot Checks)</label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label for="cookiesInput" style="margin: 0;">YouTube Cookies (Netscape Format)</label>
+              <button type="button" id="clearCookiesBtn" class="btn-clear-cookies hidden" style="background: none; border: none; color: #f43f5e; font-size: 11.5px; font-weight: 700; cursor: pointer;">🗑️ Remove Cookies</button>
+            </div>
+            <div id="cookieStatusBadge" style="margin-bottom: 8px; font-size: 12px; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8;">
+              ⚪ Checking cookies status...
+            </div>
             <p class="modal-hint">
-              If YouTube shows a bot check on cloud servers, export cookies from YouTube using the free 
-              <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> extension and paste them below:
+              Click <strong>Copy</strong> in the 
+              <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> extension on YouTube.com and paste below:
             </p>
-            <textarea id="cookiesInput" rows="4" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com  TRUE  /  TRUE  ..." style="width: 100%; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-main); font-size: 13px; font-family: monospace; outline: none; resize: vertical;"></textarea>
+            <textarea id="cookiesInput" rows="4" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com  TRUE  /  TRUE  ..." style="width: 100%; padding: 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-main); font-size: 12px; font-family: monospace; outline: none; resize: vertical;"></textarea>
           </div>
 
-          <button id="saveSettingsBtn" class="btn-primary" style="margin-top: 18px;">Save Settings</button>
+          <button id="saveSettingsBtn" class="btn-primary" style="margin-top: 18px;">💾 Save Settings</button>
           <div id="settingsStatusMsg" class="status-msg"></div>
         </div>
       </div>

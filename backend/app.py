@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
 
-from config import OUTPUT_DIR, STATIC_DIR, SETTINGS_FILE, ASPECT_RATIOS
+from config import BASE_DIR, OUTPUT_DIR, STATIC_DIR, SETTINGS_FILE, ASPECT_RATIOS
 from pipeline import start_clipping_job, JOBS
 
 app = FastAPI(
@@ -50,13 +50,26 @@ class SettingsRequest(BaseModel):
     youtube_cookies: Optional[str] = None
 
 def load_settings() -> Dict[str, Any]:
+    settings = {"gemini_api_key": os.environ.get("GEMINI_API_KEY", "")}
     if SETTINGS_FILE.exists():
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                settings.update(json.load(f))
         except Exception:
             pass
-    return {"gemini_api_key": os.environ.get("GEMINI_API_KEY", "")}
+            
+    # Auto-restore cookies.txt from settings if missing
+    cookie_path = BASE_DIR / "cookies.txt"
+    if not cookie_path.exists() or cookie_path.stat().st_size < 10:
+        saved_cookies = settings.get("youtube_cookies") or os.environ.get("YOUTUBE_COOKIES") or os.environ.get("YOUTUBE_COOKIE_CONTENT")
+        if saved_cookies and len(saved_cookies.strip()) > 20:
+            try:
+                with open(cookie_path, "w", encoding="utf-8") as f:
+                    f.write(saved_cookies.strip())
+            except Exception as e:
+                print(f"Error restoring cookies: {e}")
+                
+    return settings
 
 def save_settings(data: Dict[str, Any]):
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -122,41 +135,66 @@ def get_settings_status():
     has_key = bool(key and len(key) > 5)
     masked_key = f"{key[:4]}...{key[-4:]}" if has_key else ""
     
-    # Check if cookies.txt exists
+    # Check if cookies.txt exists and count cookies
     cookie_path = BASE_DIR / "cookies.txt"
-    has_cookies = cookie_path.exists() and cookie_path.stat().st_size > 20
+    cookie_lines = 0
+    saved_cookies_text = settings.get("youtube_cookies", "")
     
+    if cookie_path.exists() and cookie_path.stat().st_size > 20:
+        try:
+            with open(cookie_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                cookie_lines = len([l for l in content.splitlines() if l.strip() and not l.startswith("#")])
+                if not saved_cookies_text:
+                    saved_cookies_text = content
+        except Exception:
+            pass
+            
     return {
         "has_gemini_key": has_key,
         "masked_key": masked_key,
-        "has_cookies": has_cookies
+        "has_cookies": bool(cookie_lines > 0),
+        "cookie_count": cookie_lines,
+        "youtube_cookies": saved_cookies_text if cookie_lines > 0 else ""
     }
 
 @app.post("/api/settings")
 def update_settings(req: SettingsRequest):
     settings = load_settings()
+    cookie_path = BASE_DIR / "cookies.txt"
+    
     if req.gemini_api_key is not None:
         settings["gemini_api_key"] = req.gemini_api_key.strip()
-    save_settings(settings)
-    
+        
     if req.youtube_cookies is not None:
-        cookie_path = BASE_DIR / "cookies.txt"
         cookie_val = req.youtube_cookies.strip()
         if len(cookie_val) > 20:
+            settings["youtube_cookies"] = cookie_val
             with open(cookie_path, "w", encoding="utf-8") as f:
                 f.write(cookie_val)
-        elif len(cookie_val) == 0 and cookie_path.exists():
-            try:
-                cookie_path.unlink()
-            except Exception:
-                pass
-                
-    cookie_path = BASE_DIR / "cookies.txt"
-    has_cookies = cookie_path.exists() and cookie_path.stat().st_size > 20
+        elif len(cookie_val) == 0:
+            settings.pop("youtube_cookies", None)
+            if cookie_path.exists():
+                try:
+                    cookie_path.unlink()
+                except Exception:
+                    pass
+                    
+    save_settings(settings)
+    
+    cookie_lines = 0
+    if cookie_path.exists() and cookie_path.stat().st_size > 20:
+        try:
+            with open(cookie_path, "r", encoding="utf-8", errors="ignore") as f:
+                cookie_lines = len([l for l in f.read().splitlines() if l.strip() and not l.startswith("#")])
+        except Exception:
+            pass
+            
     return {
         "message": "Settings saved successfully",
         "has_gemini_key": bool(settings.get("gemini_api_key")),
-        "has_cookies": has_cookies
+        "has_cookies": bool(cookie_lines > 0),
+        "cookie_count": cookie_lines
     }
 
 # Mount static file endpoints

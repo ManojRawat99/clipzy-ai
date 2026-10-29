@@ -38,6 +38,8 @@ const openSettingsBtn = document.getElementById("openSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const geminiKeyInput = document.getElementById("geminiKeyInput");
 const cookiesInput = document.getElementById("cookiesInput");
+const cookieStatusBadge = document.getElementById("cookieStatusBadge");
+const clearCookiesBtn = document.getElementById("clearCookiesBtn");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const settingsStatusMsg = document.getElementById("settingsStatusMsg");
 
@@ -373,14 +375,48 @@ async function loadSettings() {
         statusParts.push(`Gemini: ${data.masked_key}`);
       }
       if (data.has_cookies) {
-        statusParts.push(`🍪 Cookies: Active`);
-        if (cookiesInput) cookiesInput.placeholder = "🍪 Custom YouTube cookies are currently active.";
+        statusParts.push(`🍪 Cookies: Active (${data.cookie_count})`);
+        if (cookieStatusBadge) {
+          cookieStatusBadge.innerHTML = `✅ <strong>Cookies Active:</strong> ${data.cookie_count} YouTube cookies loaded.`;
+          cookieStatusBadge.style.background = "rgba(16, 185, 129, 0.15)";
+          cookieStatusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
+          cookieStatusBadge.style.color = "#34d399";
+        }
+        if (clearCookiesBtn) clearCookiesBtn.classList.remove("hidden");
+        if (cookiesInput && data.youtube_cookies && !cookiesInput.value) {
+          cookiesInput.value = data.youtube_cookies;
+        }
+      } else {
+        if (cookieStatusBadge) {
+          cookieStatusBadge.innerHTML = `⚪ No cookies saved yet. (Paste below and tap Save)`;
+          cookieStatusBadge.style.background = "rgba(255, 255, 255, 0.05)";
+          cookieStatusBadge.style.borderColor = "rgba(255, 255, 255, 0.1)";
+          cookieStatusBadge.style.color = "#94a3b8";
+        }
+        if (clearCookiesBtn) clearCookiesBtn.classList.add("hidden");
       }
       if (statusParts.length > 0) {
         settingsStatusMsg.textContent = statusParts.join(" | ");
       }
     }
   } catch (e) {}
+}
+
+if (clearCookiesBtn) {
+  clearCookiesBtn.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ youtube_cookies: "" })
+      });
+      if (res.ok) {
+        if (cookiesInput) cookiesInput.value = "";
+        showToast("Cookies Removed", "YouTube cookies cleared.", "info", 2500);
+        loadSettings();
+      }
+    } catch (e) {}
+  });
 }
 
 saveSettingsBtn.addEventListener("click", async () => {
@@ -398,14 +434,14 @@ saveSettingsBtn.addEventListener("click", async () => {
       body: JSON.stringify(payload)
     });
     if (res.ok) {
+      const respData = await res.json();
       settingsStatusMsg.textContent = "Settings saved successfully!";
       geminiKeyInput.value = "";
-      if (cookiesInput) cookiesInput.value = "";
-      showToast("Settings Saved", "Configuration updated successfully.", "success", 2500);
+      showToast("Settings Saved! ✅", `${respData.cookie_count || 0} YouTube cookies active.`, "success", 3000);
+      loadSettings();
       setTimeout(() => {
         settingsModal.classList.add("hidden");
-        loadSettings();
-      }, 1000);
+      }, 1200);
     }
   } catch (e) {
     settingsStatusMsg.textContent = "Failed to save settings.";
