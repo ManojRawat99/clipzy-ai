@@ -65,15 +65,23 @@ def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
 def get_cookie_file() -> Optional[Path]:
     """
     Check if cookies are provided via:
-    1. Environment variable YOUTUBE_COOKIES or YOUTUBE_COOKIE_CONTENT (Render permanent config)
-    2. Local cookies.txt file
+    1. Any environment variable containing 'COOKIE' or 'youtube.com'
+    2. Render Secret File (/etc/secrets/cookies.txt)
+    3. Local cookies.txt file or settings.json
     """
-    cookie_env = os.environ.get("YOUTUBE_COOKIES") or os.environ.get("YOUTUBE_COOKIE_CONTENT")
+    cookie_env = None
+    for k, v in os.environ.items():
+        if "COOKIE" in k.upper() or ("youtube.com" in v and len(v) > 20):
+            cookie_env = v
+            break
+
     if cookie_env and len(cookie_env.strip()) > 20:
         env_cookie_path = BASE_DIR / "cookies.txt"
         try:
             cleaned = cookie_env.strip()
-            # Handle escaped newlines/tabs from cloud dashboard inputs
+            # Handle quotes, escaped newlines/tabs from cloud dashboard inputs
+            if (cleaned.startswith('"') and cleaned.endswith('"')) or (cleaned.startswith("'") and cleaned.endswith("'")):
+                cleaned = cleaned[1:-1]
             if "\\n" in cleaned:
                 cleaned = cleaned.replace("\\n", "\n")
             if "\\t" in cleaned:
@@ -85,12 +93,31 @@ def get_cookie_file() -> Optional[Path]:
             print(f"Error writing cookie from env: {e}")
 
     candidates = [
+        Path("/etc/secrets/cookies.txt"),
+        Path("/etc/secrets/youtube_cookies.txt"),
         BASE_DIR / "cookies.txt",
-        BASE_DIR / "backend" / "cookies.txt"
+        BASE_DIR / "backend" / "cookies.txt",
+        Path("/app/cookies.txt")
     ]
     for c in candidates:
         if c.exists() and c.stat().st_size > 10:
             return c
+
+    # Also check settings.json
+    settings_file = BASE_DIR / "settings.json"
+    if settings_file.exists():
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                val = data.get("youtube_cookies", "")
+                if val and len(val.strip()) > 20:
+                    target = BASE_DIR / "cookies.txt"
+                    with open(target, "w", encoding="utf-8") as wf:
+                        wf.write(val.strip())
+                    return target
+        except Exception:
+            pass
+
     return None
 
 def get_video_info(url: str) -> Dict[str, Any]:

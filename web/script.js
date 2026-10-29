@@ -383,7 +383,7 @@ async function loadSettings() {
           cookieStatusBadge.style.color = "#34d399";
         }
         if (clearCookiesBtn) clearCookiesBtn.classList.remove("hidden");
-        if (cookiesInput && data.youtube_cookies && !cookiesInput.value) {
+        if (cookiesInput && data.youtube_cookies) {
           cookiesInput.value = data.youtube_cookies;
         }
       } else {

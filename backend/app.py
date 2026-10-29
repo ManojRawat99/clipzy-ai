@@ -135,18 +135,19 @@ def get_settings_status():
     has_key = bool(key and len(key) > 5)
     masked_key = f"{key[:4]}...{key[-4:]}" if has_key else ""
     
-    # Check if cookies.txt exists and count cookies
-    cookie_path = BASE_DIR / "cookies.txt"
-    cookie_lines = 0
-    saved_cookies_text = settings.get("youtube_cookies", "")
+    # Auto-detect cookie from env vars, secret files, or disk
+    from youtube import get_cookie_file
+    cookie_path = get_cookie_file()
     
-    if cookie_path.exists() and cookie_path.stat().st_size > 20:
+    cookie_lines = 0
+    saved_cookies_text = ""
+    
+    if cookie_path and cookie_path.exists() and cookie_path.stat().st_size > 20:
         try:
             with open(cookie_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
                 cookie_lines = len([l for l in content.splitlines() if l.strip() and not l.startswith("#")])
-                if not saved_cookies_text:
-                    saved_cookies_text = content
+                saved_cookies_text = content
         except Exception:
             pass
             
@@ -155,7 +156,7 @@ def get_settings_status():
         "masked_key": masked_key,
         "has_cookies": bool(cookie_lines > 0),
         "cookie_count": cookie_lines,
-        "youtube_cookies": saved_cookies_text if cookie_lines > 0 else ""
+        "youtube_cookies": saved_cookies_text
     }
 
 @app.post("/api/settings")
