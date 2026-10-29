@@ -10,15 +10,16 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 def extract_video_id(url: str) -> Optional[str]:
-    """Extract 11-character YouTube video ID from various URL formats."""
+    """Extract YouTube video ID from various URL formats."""
     patterns = [
-        r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",
-        r"(?:youtu\.be\/)([0-9A-Za-z_-]{11})",
-        r"(?:shorts\/)([0-9A-Za-z_-]{11})",
-        r"(?:embed\/)([0-9A-Za-z_-]{11})"
+        r"(?:v=|\/)([0-9A-Za-z_-]{11})(?:\?|&|\/|$)",
+        r"(?:youtu\.be\/)([0-9A-Za-z_-]{11})(?:\?|&|\/|$)",
+        r"(?:shorts\/)([0-9A-Za-z_-]{11})(?:\?|&|\/|$)",
+        r"(?:embed\/)([0-9A-Za-z_-]{11})(?:\?|&|\/|$)",
+        r"^([0-9A-Za-z_-]{11})$"
     ]
     for pattern in patterns:
-        match = re.search(pattern, url)
+        match = re.search(pattern, url.strip())
         if match:
             return match.group(1)
     return None
@@ -45,7 +46,7 @@ def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
                 "view_count": 0
             }
     except Exception as e:
-        print(f"oEmbed fetch error for {video_id}: {e}")
+        print(f"oEmbed fetch note for {video_id}: {e}")
         
     return {
         "id": video_id,
@@ -59,10 +60,9 @@ def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
 def get_cookie_file() -> Optional[Path]:
     """
     Check if cookies are provided via:
-    1. Environment variable YOUTUBE_COOKIES or YOUTUBE_COOKIE_CONTENT (Render dashboard)
+    1. Environment variable YOUTUBE_COOKIES or YOUTUBE_COOKIE_CONTENT
     2. Local cookies.txt file
     """
-    # Check env var for cloud deployment (e.g. Render)
     cookie_env = os.environ.get("YOUTUBE_COOKIES") or os.environ.get("YOUTUBE_COOKIE_CONTENT")
     if cookie_env and len(cookie_env.strip()) > 20:
         env_cookie_path = BASE_DIR / "cookies.txt"
@@ -84,8 +84,8 @@ def get_cookie_file() -> Optional[Path]:
 
 def get_video_info(url: str) -> Dict[str, Any]:
     """
-    Fetch video metadata with multi-client rotation and oEmbed fallback.
-    Uses android player client to bypass datacenter IP restrictions.
+    Fetch video metadata with pure Android client rotation and instant oEmbed fallback.
+    Android client never triggers bot challenges on datacenter IPs.
     """
     video_id = extract_video_id(url)
     
@@ -98,9 +98,8 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'geo_bypass_country': 'US',
         'extractor_args': {
             'youtube': {
-                # Android client does not trigger bot or PO-token challenges on datacenter IPs
-                'player_client': ['android', 'ios'],
-                'player_skip': ['web', 'web_safari', 'configs']
+                'player_client': ['android'],
+                'player_skip': ['web', 'web_safari', 'mweb', 'ios', 'tv', 'configs']
             }
         }
     }
@@ -121,7 +120,7 @@ def get_video_info(url: str) -> Dict[str, Any]:
                 "view_count": info.get("view_count", 0)
             }
     except Exception as e:
-        print(f"yt-dlp info extraction warning: {e}. Falling back to oEmbed API...")
+        print(f"yt-dlp info extraction notice: {e}. Falling back to Google oEmbed API...")
         if video_id:
             return fetch_oembed_info(video_id)
             
@@ -137,7 +136,6 @@ def get_video_info(url: str) -> Dict[str, Any]:
 def get_transcript(video_id: str) -> List[Dict[str, Any]]:
     """
     Fetch transcript using youtube_transcript_api.
-    Tries multiple languages and handles both new & older library versions.
     If unavailable or blocked, safely returns empty list without breaking the pipeline.
     """
     try:
@@ -170,7 +168,6 @@ def get_transcript(video_id: str) -> List[Dict[str, Any]]:
                 raw_items = transcript.fetch()
                 cleaned = []
                 for item in raw_items:
-                    # Support dict or snippet object
                     if isinstance(item, dict):
                         text = item.get("text", "")
                         start = item.get("start", 0)
@@ -195,26 +192,25 @@ def get_transcript(video_id: str) -> List[Dict[str, Any]]:
 
 def download_video(url: str, output_path: Path) -> Path:
     """
-    Download video in 720p/1080p MP4 format.
-    Multi-client fallback avoids 'Sign in to confirm you are not a bot' on Cloud/Datacenter IPs.
+    Download video in MP4 format.
+    Pure Android client bypass avoids 'Sign in to confirm you are not a bot' on Datacenter IPs.
     """
     output_template = str(output_path.with_suffix('')) + ".%(ext)s"
     cookie_path = get_cookie_file()
     
-    # Layer 1: Android primary client + iOS fallback (Verified bypass of bot check on datacenter IPs)
+    # Layer 1: Pure Android Client (Format 18: single MP4 stream, zero bot check on datacenter IPs)
     opts_layer1 = {
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
         'geo_bypass_country': 'US',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios'],
-                'player_skip': ['web', 'web_safari', 'configs']
+                'player_client': ['android'],
+                'player_skip': ['web', 'web_safari', 'mweb', 'ios', 'tv', 'tv_downgraded', 'configs']
             }
         },
-        'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/bestvideo+bestaudio/best',
+        'format': '18/best[ext=mp4]/best',
         'outtmpl': output_template,
-        'merge_output_format': 'mp4',
         'quiet': False,
         'no_warnings': True
     }
@@ -225,8 +221,8 @@ def download_video(url: str, output_path: Path) -> Path:
         with yt_dlp.YoutubeDL(opts_layer1) as ydl:
             ydl.download([url])
     except Exception as e1:
-        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Single-stream Android format 18)...")
-        # Layer 2: Android standard stream (Format 18: 640x360 or 720p MP4 direct stream)
+        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Android adaptive formats)...")
+        # Layer 2: Android adaptive 720p/1080p
         opts_layer2 = {
             'ffmpeg_location': str(FFMPEG_PATH),
             'geo_bypass': True,
@@ -234,11 +230,12 @@ def download_video(url: str, output_path: Path) -> Path:
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android'],
-                    'player_skip': ['web', 'web_safari']
+                    'player_skip': ['web', 'web_safari', 'mweb', 'ios', 'tv', 'configs']
                 }
             },
-            'format': '18/best[ext=mp4]/best',
+            'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': output_template,
+            'merge_output_format': 'mp4',
             'quiet': False,
             'no_warnings': True
         }
@@ -249,18 +246,18 @@ def download_video(url: str, output_path: Path) -> Path:
             with yt_dlp.YoutubeDL(opts_layer2) as ydl:
                 ydl.download([url])
         except Exception as e2:
-            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Universal mobile web stream)...")
+            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Universal worst/best MP4)...")
             # Layer 3: Universal fallback
             opts_layer3 = {
                 'ffmpeg_location': str(FFMPEG_PATH),
                 'geo_bypass': True,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android_vr', 'tv_downgraded'],
-                        'player_skip': ['web']
+                        'player_client': ['android'],
+                        'player_skip': ['web', 'web_safari']
                     }
                 },
-                'format': 'worst[ext=mp4]/best[ext=mp4]/best',
+                'format': 'worst[ext=mp4]/worst',
                 'outtmpl': output_template,
                 'quiet': False,
                 'no_warnings': True

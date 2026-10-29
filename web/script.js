@@ -37,6 +37,7 @@ const settingsModal = document.getElementById("settingsModal");
 const openSettingsBtn = document.getElementById("openSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const geminiKeyInput = document.getElementById("geminiKeyInput");
+const cookiesInput = document.getElementById("cookiesInput");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const settingsStatusMsg = document.getElementById("settingsStatusMsg");
 
@@ -367,8 +368,16 @@ async function loadSettings() {
     const res = await fetch("/api/settings");
     if (res.ok) {
       const data = await res.json();
+      const statusParts = [];
       if (data.has_gemini_key) {
-        settingsStatusMsg.textContent = `Active Key: ${data.masked_key}`;
+        statusParts.push(`Gemini: ${data.masked_key}`);
+      }
+      if (data.has_cookies) {
+        statusParts.push(`🍪 Cookies: Active`);
+        if (cookiesInput) cookiesInput.placeholder = "🍪 Custom YouTube cookies are currently active.";
+      }
+      if (statusParts.length > 0) {
+        settingsStatusMsg.textContent = statusParts.join(" | ");
       }
     }
   } catch (e) {}
@@ -376,16 +385,23 @@ async function loadSettings() {
 
 saveSettingsBtn.addEventListener("click", async () => {
   const key = geminiKeyInput.value.trim();
+  const cookies = cookiesInput ? cookiesInput.value.trim() : "";
+  
+  const payload = {};
+  if (key) payload.gemini_api_key = key;
+  if (cookies) payload.youtube_cookies = cookies;
+  
   try {
     const res = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gemini_api_key: key })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       settingsStatusMsg.textContent = "Settings saved successfully!";
       geminiKeyInput.value = "";
-      showToast("Settings Saved", "Gemini API key updated.", "success", 2500);
+      if (cookiesInput) cookiesInput.value = "";
+      showToast("Settings Saved", "Configuration updated successfully.", "success", 2500);
       setTimeout(() => {
         settingsModal.classList.add("hidden");
         loadSettings();

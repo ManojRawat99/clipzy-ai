@@ -47,6 +47,7 @@ class ClipRequest(BaseModel):
 
 class SettingsRequest(BaseModel):
     gemini_api_key: Optional[str] = None
+    youtube_cookies: Optional[str] = None
 
 def load_settings() -> Dict[str, Any]:
     if SETTINGS_FILE.exists():
@@ -120,9 +121,15 @@ def get_settings_status():
     key = settings.get("gemini_api_key", "")
     has_key = bool(key and len(key) > 5)
     masked_key = f"{key[:4]}...{key[-4:]}" if has_key else ""
+    
+    # Check if cookies.txt exists
+    cookie_path = BASE_DIR / "cookies.txt"
+    has_cookies = cookie_path.exists() and cookie_path.stat().st_size > 20
+    
     return {
         "has_gemini_key": has_key,
-        "masked_key": masked_key
+        "masked_key": masked_key,
+        "has_cookies": has_cookies
     }
 
 @app.post("/api/settings")
@@ -131,7 +138,26 @@ def update_settings(req: SettingsRequest):
     if req.gemini_api_key is not None:
         settings["gemini_api_key"] = req.gemini_api_key.strip()
     save_settings(settings)
-    return {"message": "Settings saved successfully", "has_gemini_key": bool(settings.get("gemini_api_key"))}
+    
+    if req.youtube_cookies is not None:
+        cookie_path = BASE_DIR / "cookies.txt"
+        cookie_val = req.youtube_cookies.strip()
+        if len(cookie_val) > 20:
+            with open(cookie_path, "w", encoding="utf-8") as f:
+                f.write(cookie_val)
+        elif len(cookie_val) == 0 and cookie_path.exists():
+            try:
+                cookie_path.unlink()
+            except Exception:
+                pass
+                
+    cookie_path = BASE_DIR / "cookies.txt"
+    has_cookies = cookie_path.exists() and cookie_path.stat().st_size > 20
+    return {
+        "message": "Settings saved successfully",
+        "has_gemini_key": bool(settings.get("gemini_api_key")),
+        "has_cookies": has_cookies
+    }
 
 # Mount static file endpoints
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
