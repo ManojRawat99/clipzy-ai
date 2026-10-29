@@ -65,15 +65,21 @@ def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
 def get_cookie_file() -> Optional[Path]:
     """
     Check if cookies are provided via:
-    1. Environment variable YOUTUBE_COOKIES or YOUTUBE_COOKIE_CONTENT
+    1. Environment variable YOUTUBE_COOKIES or YOUTUBE_COOKIE_CONTENT (Render permanent config)
     2. Local cookies.txt file
     """
     cookie_env = os.environ.get("YOUTUBE_COOKIES") or os.environ.get("YOUTUBE_COOKIE_CONTENT")
     if cookie_env and len(cookie_env.strip()) > 20:
         env_cookie_path = BASE_DIR / "cookies.txt"
         try:
+            cleaned = cookie_env.strip()
+            # Handle escaped newlines/tabs from cloud dashboard inputs
+            if "\\n" in cleaned:
+                cleaned = cleaned.replace("\\n", "\n")
+            if "\\t" in cleaned:
+                cleaned = cleaned.replace("\\t", "\t")
             with open(env_cookie_path, "w", encoding="utf-8") as f:
-                f.write(cookie_env.strip())
+                f.write(cleaned)
             return env_cookie_path
         except Exception as e:
             print(f"Error writing cookie from env: {e}")
