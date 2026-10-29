@@ -9,6 +9,11 @@ import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
+ANDROID_HEADERS = {
+    'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 14; en_US; Pixel 8 Pro Build/UQ1A.240205.004) gzip',
+    'Accept-Language': 'en-US,en;q=0.9',
+}
+
 def extract_video_id(url: str) -> Optional[str]:
     """Extract YouTube video ID from various URL formats."""
     patterns = [
@@ -96,6 +101,7 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'extract_flat': False,
         'geo_bypass': True,
         'geo_bypass_country': 'US',
+        'http_headers': ANDROID_HEADERS,
         'extractor_args': {
             'youtube': {
                 'player_client': ['android'],
@@ -203,6 +209,7 @@ def download_video(url: str, output_path: Path) -> Path:
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
         'geo_bypass_country': 'US',
+        'http_headers': ANDROID_HEADERS,
         'extractor_args': {
             'youtube': {
                 'player_client': ['android'],
@@ -227,6 +234,7 @@ def download_video(url: str, output_path: Path) -> Path:
             'ffmpeg_location': str(FFMPEG_PATH),
             'geo_bypass': True,
             'geo_bypass_country': 'IN',
+            'http_headers': ANDROID_HEADERS,
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android'],
