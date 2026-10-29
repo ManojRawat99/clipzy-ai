@@ -97,7 +97,16 @@ def normalize_cookie_text(content: str) -> tuple[str, int]:
     if "\\t" in raw:
         raw = raw.replace("\\t", "\t")
         
+    # 1. Clean flattened comments: Remove any # comment before the first domain if flattened
+    raw = re.sub(r'#.*?(?=(?:\.youtube\.com|\.google\.com|youtube\.com|google\.com)\s)', '', raw, flags=re.DOTALL)
+
+    # 2. Check if text is flattened into 1 or 2 lines
     lines = raw.splitlines()
+    if len(lines) <= 2 and ("youtube.com" in raw or "google.com" in raw):
+        chunks = re.split(r'\s+(?=(?:\.youtube\.com|\.google\.com|youtube\.com|google\.com)\s)', raw.strip())
+    else:
+        chunks = lines
+
     out = [
         "# Netscape HTTP Cookie File",
         "# https://curl.se/rfc/cookie_spec.html",
@@ -105,8 +114,8 @@ def normalize_cookie_text(content: str) -> tuple[str, int]:
     ]
     valid_count = 0
     
-    for line in lines:
-        line = line.strip()
+    for chunk in chunks:
+        line = chunk.strip()
         if not line or line.startswith("#"):
             continue
             
@@ -180,42 +189,41 @@ def get_cookie_file() -> Optional[Path]:
     ]
     env_content = None
     matched_key = None
-    for k in priority_keys:
-        val = os.environ.get(k)
-        if val and len(val.strip()) > 20:
-            env_content = val
+    for k, v in os.environ.items():
+        if not v or len(v.strip()) < 15:
+            continue
+        clean_k = k.strip().upper()
+        if clean_k in priority_keys or any(clean_k == p for p in priority_keys):
+            env_content = v
             matched_key = k
             break
             
     if not env_content:
         # Search all env vars for any variable with youtube cookies (ignore json objects)
         for k, v in os.environ.items():
-            if not v or len(v.strip()) < 30:
+            if not v or len(v.strip()) < 20:
                 continue
             stripped = v.strip()
             if stripped.startswith("{") or stripped.startswith("["):
                 continue
-            if "youtube.com" in v and ("LOGIN_INFO" in v or "SID" in v or "PREF" in v or "TRUE" in v):
+            if "youtube.com" in v or "LOGIN_INFO" in v or "VISITOR_INFO" in v:
                 env_content = v
                 matched_key = k
                 break
                 
     if env_content:
+        print(f"[Clipzy AI] [COOKIES] Found candidate environment variable '{matched_key}' (length {len(env_content)} chars)")
         normalized, count = normalize_cookie_text(env_content)
         if count > 0:
             try:
                 with open(target, "w", encoding="utf-8") as f:
                     f.write(normalized)
-                try:
-                    print(f"[Clipzy AI] [COOKIES] Loaded {count} YouTube cookies from environment variable '{matched_key}'")
-                except Exception:
-                    pass
+                print(f"[Clipzy AI] [COOKIES] Successfully normalized & loaded {count} YouTube cookies from env '{matched_key}'")
                 return target
             except Exception as e:
-                try:
-                    print(f"Error writing normalized cookie from env '{matched_key}': {e}")
-                except Exception:
-                    pass
+                print(f"Error writing normalized cookie from env '{matched_key}': {e}")
+        else:
+            print(f"[Clipzy AI] [COOKIES] Warning: Env var '{matched_key}' could not be normalized into Netscape format")
 
     # 2. Check Render Secret Files and known file paths
     candidate_paths = [

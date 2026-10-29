@@ -34,6 +34,9 @@ app.add_middleware(
 def startup_event():
     try:
         from youtube import get_cookie_file
+        matching_keys = [k for k in os.environ if any(x in k.upper() for x in ("COOKIE", "YT", "YOUTUBE"))]
+        if matching_keys:
+            print(f"[Clipzy AI] [ENV DISCOVERY] Detected environment variables: {matching_keys}")
         cookie_path = get_cookie_file()
         if cookie_path and cookie_path.exists():
             try:
