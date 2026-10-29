@@ -123,10 +123,17 @@ def process_video_job(
             
         info = get_video_info(url)
         video_title = info.get("title", "Video")
-        total_duration = info.get("duration", 0)
+        total_duration = float(info.get("duration", 0) or 0)
         
         update_job(job_id, "processing", 20, "Extracting video transcript...")
         transcript = get_transcript(video_id)
+        
+        # If duration was not found in metadata, calculate from transcript
+        if total_duration <= 5.0 and transcript:
+            last_item = transcript[-1]
+            total_duration = float(last_item.get("start", 0)) + float(last_item.get("duration", 0))
+        if total_duration <= 5.0:
+            total_duration = 240.0 # Safe 4-minute estimate fallback
         
         update_job(job_id, "processing", 35, "AI is analyzing viral hooks & highlights...")
         clip_candidates = find_viral_clips(
@@ -221,9 +228,26 @@ def process_video_job(
         )
         
     except Exception as e:
-        err_msg = str(e)
+        raw_err = str(e)
         print(f"Job {job_id} error: {traceback.format_exc()}")
-        update_job(job_id, "failed", 0, "Processing failed", error=err_msg)
+        
+        # Humanize and clean error message for mobile display
+        if "confirm you're not a bot" in raw_err.lower():
+            friendly_err = "YouTube bot check triggered for this video on cloud IP. Trying another link or adding YouTube cookies in Render resolves this."
+        elif "private video" in raw_err.lower():
+            friendly_err = "This YouTube video is set to private and cannot be clipped."
+        elif "members-only" in raw_err.lower():
+            friendly_err = "This YouTube video is members-only content."
+        elif "could not find suitable clips" in raw_err.lower():
+            friendly_err = "Could not find enough speech or highlights in this short video."
+        elif "invalid youtube url" in raw_err.lower():
+            friendly_err = "Please enter a valid YouTube video or Shorts link."
+        elif "http error 403" in raw_err.lower():
+            friendly_err = "YouTube stream access temporary 403. Please retry with another video link."
+        else:
+            friendly_err = raw_err[:160]
+            
+        update_job(job_id, "failed", 0, "Processing failed", error=friendly_err)
 
 def start_clipping_job(
     url: str,

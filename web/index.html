@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#0a0c10">
+  <meta name="theme-color" content="#0b0d14">
   <title>Clipzy AI Studio - YouTube to Viral Shorts & Reels</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,14 +21,13 @@
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
           <h1>Clipzy AI</h1>
-          <span class="desktop-only">Autonomous Viral Video Repurposing</span>
+          <span class="subtext">Viral Shorts Generator</span>
         </div>
       </div>
       <div class="nav-actions">
-        <span class="badge free-badge desktop-only">100% Free Cloud</span>
-        <button id="openSettingsBtn" class="btn-icon-text">
-          <span class="icon">⚙️</span>
-          <span class="desktop-only">Settings</span>
+        <span class="status-pill"><span class="pulse-dot"></span> Ready</span>
+        <button id="openSettingsBtn" class="btn-icon-circle" title="Settings" aria-label="Settings">
+          ⚙️
         </button>
       </div>
     </header>
@@ -33,13 +35,15 @@
     <!-- Main Container -->
     <main class="main-content">
       <!-- Hero / Input Card -->
-      <section class="card input-card">
-        <div class="card-header">
-          <h2>Create Viral Shorts & Reels</h2>
-          <p>Paste a YouTube video link. AI finds the top highlights, tracks faces, and burns animated captions.</p>
+      <section class="card hero-card">
+        <div class="hero-header">
+          <div class="hero-badge">✨ 100% Free AI Video Repurposing</div>
+          <h2>Create Viral Shorts & Reels in Seconds</h2>
+          <p>Turn long YouTube videos into ready-to-post 9:16 vertical clips with speaker face tracking & Alex Hormozi captions.</p>
         </div>
 
-        <div class="url-input-group">
+        <!-- URL Input Card -->
+        <div class="input-container">
           <div class="input-wrapper">
             <span class="input-icon">🔗</span>
             <input 
@@ -48,66 +52,137 @@
               placeholder="Paste YouTube link here..." 
               autocomplete="off"
               inputmode="url"
+              spellcheck="false"
             />
-            <button id="pasteBtn" type="button" class="btn-inline-paste" title="Paste from clipboard">
-              <span>📋 Paste</span>
+            <button id="clearInputBtn" type="button" class="btn-clear hidden" title="Clear input">✕</button>
+          </div>
+
+          <!-- Quick Action Bar -->
+          <div class="quick-action-bar">
+            <button id="pasteBtn" type="button" class="btn-paste-action">
+              <span class="btn-icon">📋</span>
+              <span>Tap to Paste Link</span>
+            </button>
+            <button id="sampleBtn" type="button" class="btn-sample-action">
+              <span>🎬 Try Sample</span>
             </button>
           </div>
-          <button id="clipBtn" class="btn-generate">
+        </div>
+
+        <!-- Segmented Controls for Mobile -->
+        <div class="options-container">
+          <!-- Aspect Ratio Options -->
+          <div class="option-group">
+            <label class="group-label">📐 Aspect Ratio</label>
+            <div class="segment-grid ratio-grid" id="ratioSegments">
+              <button type="button" class="segment-btn active" data-value="9:16">
+                <span class="segment-icon">📱</span>
+                <span class="segment-title">9:16</span>
+                <span class="segment-desc">Shorts / Reels</span>
+              </button>
+              <button type="button" class="segment-btn" data-value="1:1">
+                <span class="segment-icon">🟦</span>
+                <span class="segment-title">1:1</span>
+                <span class="segment-desc">Square / Feed</span>
+              </button>
+              <button type="button" class="segment-btn" data-value="4:5">
+                <span class="segment-icon">🖼️</span>
+                <span class="segment-title">4:5</span>
+                <span class="segment-desc">Portrait</span>
+              </button>
+              <button type="button" class="segment-btn" data-value="16:9">
+                <span class="segment-icon">💻</span>
+                <span class="segment-title">16:9</span>
+                <span class="segment-desc">Landscape</span>
+              </button>
+            </div>
+            <!-- Hidden native select for backwards compatibility -->
+            <select id="aspectRatio" class="hidden">
+              <option value="9:16" selected>9:16</option>
+              <option value="1:1">1:1</option>
+              <option value="4:5">4:5</option>
+              <option value="16:9">16:9</option>
+            </select>
+          </div>
+
+          <!-- Clip Count Options -->
+          <div class="option-group">
+            <label class="group-label">✂️ Number of Clips</label>
+            <div class="segment-grid count-grid" id="countSegments">
+              <button type="button" class="segment-btn" data-value="1">
+                <span class="segment-title">1 Clip</span>
+                <span class="segment-desc">Best Hook</span>
+              </button>
+              <button type="button" class="segment-btn active" data-value="3">
+                <span class="segment-title">3 Clips</span>
+                <span class="segment-desc">Recommended</span>
+              </button>
+              <button type="button" class="segment-btn" data-value="5">
+                <span class="segment-title">5 Clips</span>
+                <span class="segment-desc">Highlights Pack</span>
+              </button>
+            </div>
+            <!-- Hidden native select for backwards compatibility -->
+            <select id="clipCount" class="hidden">
+              <option value="1">1</option>
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Big Action Generate Button -->
+        <button id="clipBtn" class="btn-generate-hero">
+          <span class="btn-glow"></span>
+          <span class="btn-content">
             <span class="btn-icon">⚡</span>
-            <span>Generate Viral Clips</span>
-          </button>
-        </div>
+            <span class="btn-text">Generate Viral Clips</span>
+          </span>
+        </button>
 
-        <!-- Controls Grid -->
-        <div class="controls-grid">
-          <div class="control-box">
-            <label for="aspectRatio">Aspect Ratio</label>
-            <div class="select-wrapper">
-              <select id="aspectRatio">
-                <option value="9:16" selected>📱 9:16 Vertical (Shorts/Reels)</option>
-                <option value="1:1">🟦 1:1 Square (Instagram/X)</option>
-                <option value="4:5">🖼️ 4:5 Portrait (Feed)</option>
-                <option value="16:9">💻 16:9 Landscape (YouTube)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="control-box">
-            <label for="clipCount">Number of Clips</label>
-            <div class="select-wrapper">
-              <select id="clipCount">
-                <option value="1">1 Top Clip</option>
-                <option value="3" selected>3 Viral Clips</option>
-                <option value="5">5 Highlights</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Live Progress Section -->
+        <!-- Live Pipeline Progress Card -->
         <div id="progressBox" class="progress-box hidden">
-          <div class="progress-info">
-            <span id="progressStatusText">Extracting transcript & audio...</span>
-            <span id="progressPercent">0%</span>
+          <div class="progress-header">
+            <div class="progress-title-row">
+              <span class="spinner-small"></span>
+              <span id="progressStatusText" class="status-msg">Extracting video and analyzing hooks...</span>
+            </div>
+            <span id="progressPercent" class="percent-badge">0%</span>
           </div>
+
           <div class="progress-track">
             <div id="progressBar" class="progress-fill"></div>
           </div>
+
           <div class="pipeline-steps">
-            <div class="step" id="step-dl"><span>1</span> Download</div>
-            <div class="step" id="step-ai"><span>2</span> Hook Score</div>
-            <div class="step" id="step-crop"><span>3</span> Face Track</div>
-            <div class="step" id="step-sub"><span>4</span> Captions</div>
+            <div class="step" id="step-dl">
+              <span class="step-num">1</span>
+              <span class="step-name">Download</span>
+            </div>
+            <div class="step" id="step-ai">
+              <span class="step-num">2</span>
+              <span class="step-name">AI Hooks</span>
+            </div>
+            <div class="step" id="step-crop">
+              <span class="step-num">3</span>
+              <span class="step-name">Face Track</span>
+            </div>
+            <div class="step" id="step-sub">
+              <span class="step-num">4</span>
+              <span class="step-name">Captions</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- Results Grid -->
+      <!-- Ready Clips Section -->
       <section class="clips-section">
-        <div class="section-title">
-          <h2>Ready Viral Clips</h2>
-          <span id="clipCountBadge" class="count-badge">0 Clips</span>
+        <div class="section-title-row">
+          <div>
+            <h2>Ready Viral Clips</h2>
+            <p class="subtitle">Download directly to your iPhone or share on social media</p>
+          </div>
+          <span id="clipCountBadge" class="count-pill">0 Clips</span>
         </div>
 
         <div id="clipsGrid" class="clips-grid">
@@ -116,20 +191,33 @@
       </section>
     </main>
 
+    <!-- Sleek In-App Toast Notification (replaces ugly browser alert) -->
+    <div id="toastNotification" class="toast-notification hidden">
+      <div class="toast-content">
+        <span id="toastIcon" class="toast-icon">ℹ️</span>
+        <div class="toast-text-box">
+          <h4 id="toastTitle">Notification</h4>
+          <p id="toastMessage">Message content</p>
+        </div>
+      </div>
+      <button id="toastDismissBtn" class="toast-close-btn" aria-label="Close">✕</button>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settingsModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
       <div class="modal-content">
         <div class="modal-header">
           <h3>⚙️ Clipzy AI Settings</h3>
-          <button id="closeSettingsBtn" class="btn-close">&times;</button>
+          <button id="closeSettingsBtn" class="btn-close" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
           <label for="geminiKeyInput">Google Gemini API Key (Optional)</label>
           <p class="modal-hint">
-            Get a free key at <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>.
+            Get a free key at <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a>.
             If left blank, Clipzy automatically uses its built-in free Smart NLP Hook Analyzer.
           </p>
-          <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." />
+          <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." autocomplete="off" />
           <button id="saveSettingsBtn" class="btn-primary" style="margin-top: 14px;">Save Settings</button>
           <div id="settingsStatusMsg" class="status-msg"></div>
         </div>

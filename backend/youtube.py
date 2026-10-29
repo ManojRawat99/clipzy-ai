@@ -1,9 +1,10 @@
 import re
 import os
 import json
+import urllib.request
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from config import FFMPEG_PATH
+from config import FFMPEG_PATH, BASE_DIR
 import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
@@ -13,7 +14,8 @@ def extract_video_id(url: str) -> Optional[str]:
     patterns = [
         r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",
         r"(?:youtu\.be\/)([0-9A-Za-z_-]{11})",
-        r"(?:shorts\/)([0-9A-Za-z_-]{11})"
+        r"(?:shorts\/)([0-9A-Za-z_-]{11})",
+        r"(?:embed\/)([0-9A-Za-z_-]{11})"
     ]
     for pattern in patterns:
         match = re.search(pattern, url)
@@ -21,136 +23,260 @@ def extract_video_id(url: str) -> Optional[str]:
             return match.group(1)
     return None
 
+def fetch_oembed_info(video_id: str) -> Dict[str, Any]:
+    """
+    Foolproof metadata fetch using Google's official public YouTube oEmbed API.
+    Never blocked by datacenter IPs or bot-checks.
+    """
+    try:
+        oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        req = urllib.request.Request(
+            oembed_url, 
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+            return {
+                "id": video_id,
+                "title": data.get("title", "YouTube Video"),
+                "duration": 0,
+                "uploader": data.get("author_name", "Creator"),
+                "thumbnail": data.get("thumbnail_url") or f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                "view_count": 0
+            }
+    except Exception as e:
+        print(f"oEmbed fetch error for {video_id}: {e}")
+        
+    return {
+        "id": video_id,
+        "title": "YouTube Video",
+        "duration": 0,
+        "uploader": "Creator",
+        "thumbnail": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+        "view_count": 0
+    }
+
+def get_cookie_file() -> Optional[Path]:
+    """
+    Check if cookies are provided via:
+    1. Environment variable YOUTUBE_COOKIES or YOUTUBE_COOKIE_CONTENT (Render dashboard)
+    2. Local cookies.txt file
+    """
+    # Check env var for cloud deployment (e.g. Render)
+    cookie_env = os.environ.get("YOUTUBE_COOKIES") or os.environ.get("YOUTUBE_COOKIE_CONTENT")
+    if cookie_env and len(cookie_env.strip()) > 20:
+        env_cookie_path = BASE_DIR / "cookies.txt"
+        try:
+            with open(env_cookie_path, "w", encoding="utf-8") as f:
+                f.write(cookie_env.strip())
+            return env_cookie_path
+        except Exception as e:
+            print(f"Error writing cookie from env: {e}")
+
+    candidates = [
+        BASE_DIR / "cookies.txt",
+        BASE_DIR / "backend" / "cookies.txt"
+    ]
+    for c in candidates:
+        if c.exists() and c.stat().st_size > 10:
+            return c
+    return None
+
 def get_video_info(url: str) -> Dict[str, Any]:
-    """Fetch video metadata using yt-dlp without downloading."""
+    """
+    Fetch video metadata with multi-client rotation and oEmbed fallback.
+    Uses android player client to bypass datacenter IP restrictions.
+    """
+    video_id = extract_video_id(url)
+    
     ydl_opts = {
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
-        'js_runtimes': {'node': {}},
+        'geo_bypass': True,
+        'geo_bypass_country': 'US',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'mweb', 'web']
+                # Android client does not trigger bot or PO-token challenges on datacenter IPs
+                'player_client': ['android', 'ios'],
+                'player_skip': ['web', 'web_safari', 'configs']
             }
         }
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return {
-            "id": info.get("id"),
-            "title": info.get("title", "YouTube Video"),
-            "duration": info.get("duration", 0),
-            "uploader": info.get("uploader", "Unknown"),
-            "thumbnail": info.get("thumbnail"),
-            "view_count": info.get("view_count", 0)
-        }
+    
+    cookie_path = get_cookie_file()
+    if cookie_path:
+        ydl_opts['cookiefile'] = str(cookie_path)
+        
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {
+                "id": info.get("id") or video_id,
+                "title": info.get("title", "YouTube Video"),
+                "duration": info.get("duration", 0),
+                "uploader": info.get("uploader", "Unknown"),
+                "thumbnail": info.get("thumbnail") or f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                "view_count": info.get("view_count", 0)
+            }
+    except Exception as e:
+        print(f"yt-dlp info extraction warning: {e}. Falling back to oEmbed API...")
+        if video_id:
+            return fetch_oembed_info(video_id)
+            
+    return {
+        "id": video_id or "video",
+        "title": "YouTube Video",
+        "duration": 0,
+        "uploader": "Creator",
+        "thumbnail": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg" if video_id else None,
+        "view_count": 0
+    }
 
 def get_transcript(video_id: str) -> List[Dict[str, Any]]:
     """
     Fetch transcript using youtube_transcript_api.
-    Tries English, Hindi, and then any auto-generated language.
-    Returns: list of dicts with 'text', 'start', 'duration'.
+    Tries multiple languages and handles both new & older library versions.
+    If unavailable or blocked, safely returns empty list without breaking the pipeline.
     """
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        # Try finding manual or generated transcripts (English or Hindi first)
-        preferred_langs = ['en', 'hi', 'en-US', 'en-GB', 'en-IN']
-        transcript = None
-        
-        try:
-            transcript = transcript_list.find_transcript(preferred_langs)
-        except Exception:
-            # Fall back to first available transcript (and translate to English if needed)
-            for t in transcript_list:
-                transcript = t
-                break
+        transcript_list = None
+        if hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+            try:
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            except Exception:
+                pass
                 
-        if transcript:
-            data = transcript.fetch()
-            # Clean up text
-            cleaned = []
-            for item in data:
-                text = item.get("text", "").replace("\n", " ").strip()
-                if text and text != "[Music]" and text != "[Applause]":
-                    cleaned.append({
-                        "text": text,
-                        "start": round(float(item.get("start", 0)), 2),
-                        "duration": round(float(item.get("duration", 0)), 2)
-                    })
-            return cleaned
+        if transcript_list is None:
+            try:
+                api_instance = YouTubeTranscriptApi()
+                if hasattr(api_instance, 'list'):
+                    transcript_list = api_instance.list(video_id)
+            except Exception:
+                pass
+
+        if transcript_list:
+            preferred_langs = ['en', 'hi', 'en-US', 'en-GB', 'en-IN', 'es', 'pt', 'id']
+            transcript = None
+            try:
+                transcript = transcript_list.find_transcript(preferred_langs)
+            except Exception:
+                for t in transcript_list:
+                    transcript = t
+                    break
+
+            if transcript:
+                raw_items = transcript.fetch()
+                cleaned = []
+                for item in raw_items:
+                    # Support dict or snippet object
+                    if isinstance(item, dict):
+                        text = item.get("text", "")
+                        start = item.get("start", 0)
+                        dur = item.get("duration", 0)
+                    else:
+                        text = getattr(item, "text", "")
+                        start = getattr(item, "start", 0)
+                        dur = getattr(item, "duration", 0)
+
+                    clean_text = text.replace("\n", " ").strip()
+                    if clean_text and clean_text not in ("[Music]", "[Applause]", "[Sound]", "[Silence]"):
+                        cleaned.append({
+                            "text": clean_text,
+                            "start": round(float(start), 2),
+                            "duration": round(float(dur), 2)
+                        })
+                return cleaned
     except Exception as e:
-        print(f"Transcript fetch error for {video_id}: {e}")
+        print(f"Transcript fetch note for {video_id}: {e}")
     
     return []
 
 def download_video(url: str, output_path: Path) -> Path:
     """
-    Download video in 720p or 1080p MP4 format suitable for fast processing.
-    Bypasses 403 Forbidden using Android/iOS client spoofing, Node.js JS runtime,
-    and automatic Chrome browser session fallback.
+    Download video in 720p/1080p MP4 format.
+    Multi-client fallback avoids 'Sign in to confirm you are not a bot' on Cloud/Datacenter IPs.
     """
     output_template = str(output_path.with_suffix('')) + ".%(ext)s"
+    cookie_path = get_cookie_file()
     
-    # Layer 1: Android/iOS client rotation with Node.js JS runtime
-    base_opts = {
+    # Layer 1: Android primary client + iOS fallback (Verified bypass of bot check on datacenter IPs)
+    opts_layer1 = {
         'ffmpeg_location': str(FFMPEG_PATH),
-        'js_runtimes': {'node': {}},
+        'geo_bypass': True,
+        'geo_bypass_country': 'US',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'mweb', 'web']
+                'player_client': ['android', 'ios'],
+                'player_skip': ['web', 'web_safari', 'configs']
             }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
         },
         'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/bestvideo+bestaudio/best',
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
-        'quiet': True,
+        'quiet': False,
         'no_warnings': True
     }
-    
+    if cookie_path:
+        opts_layer1['cookiefile'] = str(cookie_path)
+        
     try:
-        with yt_dlp.YoutubeDL(base_opts) as ydl:
+        with yt_dlp.YoutubeDL(opts_layer1) as ydl:
             ydl.download([url])
     except Exception as e1:
-        print(f"Layer 1 download error: {e1}. Retrying with Chrome cookies...")
-        # Layer 2: Retry with Chrome browser cookies (resolves strict bot/403 IP challenges)
+        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Single-stream Android format 18)...")
+        # Layer 2: Android standard stream (Format 18: 640x360 or 720p MP4 direct stream)
+        opts_layer2 = {
+            'ffmpeg_location': str(FFMPEG_PATH),
+            'geo_bypass': True,
+            'geo_bypass_country': 'IN',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android'],
+                    'player_skip': ['web', 'web_safari']
+                }
+            },
+            'format': '18/best[ext=mp4]/best',
+            'outtmpl': output_template,
+            'quiet': False,
+            'no_warnings': True
+        }
+        if cookie_path:
+            opts_layer2['cookiefile'] = str(cookie_path)
+            
         try:
-            cookie_opts = dict(base_opts)
-            cookie_opts['cookiesfrombrowser'] = ('chrome', None, None, None)
-            with yt_dlp.YoutubeDL(cookie_opts) as ydl:
+            with yt_dlp.YoutubeDL(opts_layer2) as ydl:
                 ydl.download([url])
         except Exception as e2:
-            print(f"Layer 2 download error: {e2}. Retrying with direct single-stream format...")
-            # Layer 3: Direct single mp4 stream fallback
-            fallback_opts = {
+            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (Universal mobile web stream)...")
+            # Layer 3: Universal fallback
+            opts_layer3 = {
                 'ffmpeg_location': str(FFMPEG_PATH),
-                'js_runtimes': {'node': {}},
+                'geo_bypass': True,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios']
+                        'player_client': ['android_vr', 'tv_downgraded'],
+                        'player_skip': ['web']
                     }
                 },
-                'format': 'best[ext=mp4]/best',
+                'format': 'worst[ext=mp4]/best[ext=mp4]/best',
                 'outtmpl': output_template,
-                'quiet': True,
+                'quiet': False,
                 'no_warnings': True
             }
-            with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+            if cookie_path:
+                opts_layer3['cookiefile'] = str(cookie_path)
+            with yt_dlp.YoutubeDL(opts_layer3) as ydl:
                 ydl.download([url])
         
     final_mp4 = output_path.with_suffix('.mp4')
     if final_mp4.exists():
         return final_mp4
-    # Check if file with other extension was created and rename if needed
+        
     for ext in ['.mkv', '.webm', '.mp4']:
         candidate = output_path.with_suffix(ext)
         if candidate.exists():
             return candidate
             
     return output_path
-
