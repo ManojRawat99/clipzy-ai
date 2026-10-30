@@ -55,6 +55,7 @@ def run_ffmpeg_render(
     """
     Renders the clip using FFmpeg with smart crop and scale to target dimensions.
     Burns animated .ass subtitles if provided.
+    Optimized with ultrafast preset & low-memory footprint for cloud containers.
     """
     vf_filters = [
         f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}",
@@ -77,34 +78,44 @@ def run_ffmpeg_render(
         "-i", str(input_video),
         "-vf", filter_chain,
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "22",
+        "-preset", "ultrafast",
+        "-tune", "fastdecode",
+        "-crf", "25",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "128k",
+        "-threads", "2",
         "-movflags", "+faststart",
         str(output_path)
     ]
     
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc.returncode != 0:
-        print(f"FFmpeg error: {proc.stderr[:400]}")
-        # Retry without subtitles if subtitles filter had syntax issues
-        if ass_path:
-            simple_chain = ",".join(vf_filters[:-1])
-            retry_cmd = [
-                FFMPEG_PATH, "-y",
-                "-ss", str(start_time),
-                "-t", str(duration),
-                "-i", str(input_video),
-                "-vf", simple_chain,
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
-                "-movflags", "+faststart",
-                str(output_path)
-            ]
-            subprocess.run(retry_cmd, check=True)
-        else:
-            raise RuntimeError(f"FFmpeg render failed: {proc.stderr[:300]}")
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
+        if proc.returncode == 0 and output_path.exists() and output_path.stat().st_size > 10000:
+            return
+        print(f"FFmpeg primary render notice: {proc.stderr[:300]}")
+    except Exception as e_p:
+        print(f"FFmpeg primary render exception: {e_p}")
+        
+    # Retry without subtitles if subtitles filter had syntax or font issues
+    simple_chain = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black"
+    retry_cmd = [
+        FFMPEG_PATH, "-y",
+        "-ss", str(start_time),
+        "-t", str(duration),
+        "-i", str(input_video),
+        "-vf", simple_chain,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "26",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-threads", "2",
+        "-movflags", "+faststart",
+        str(output_path)
+    ]
+    retry_proc = subprocess.run(retry_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
+    if retry_proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg render failed: {retry_proc.stderr[:200]}")
 
 def process_video_job(
     job_id: str,
@@ -175,12 +186,12 @@ def process_video_job(
             c_end = cand["end"]
             c_dur = c_end - c_start
             
-            step_progress = int(50 + ((idx + 1) / total_candidates) * 45)
+            p_base = int(50 + (idx / total_candidates) * 45)
             update_job(
                 job_id, 
                 "processing", 
-                step_progress, 
-                f"Generating clip #{idx+1} of {total_candidates}: '{cand['title']}'..."
+                p_base + 3, 
+                f"Clip #{idx+1} of {total_candidates}: Smart face tracking speaker..."
             )
             
             # Step A: Smart face tracking for selected aspect ratio
@@ -188,7 +199,14 @@ def process_video_job(
                 downloaded_path, c_start, min(10.0, c_dur), aspect_ratio=aspect_ratio
             )
             
-            # Step B: Generate viral subtitles
+            # Step B: Generate viral subtitles & start rendering
+            update_job(
+                job_id, 
+                "processing", 
+                p_base + 8, 
+                f"Clip #{idx+1} of {total_candidates}: Rendering video with viral subtitles..."
+            )
+            
             ass_path = None
             if transcript:
                 ass_path = TEMP_DIR / f"sub_{job_id}_{idx}.ass"

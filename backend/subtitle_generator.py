@@ -29,19 +29,19 @@ def generate_ass_subtitles(
     play_res_x = ar_info["width"]
     play_res_y = ar_info["height"]
     
-    # Calculate margin and font size depending on format
+    # Calculate margin and font size dynamically for target resolution
     if aspect_ratio == "9:16":
-        font_size = 54
-        margin_v = 380  # Keeps captions in TikTok/Reels safe center
+        font_size = 38
+        margin_v = 240  # Keeps captions in TikTok/Reels safe center
     elif aspect_ratio == "1:1":
-        font_size = 44
-        margin_v = 110
+        font_size = 32
+        margin_v = 80
     elif aspect_ratio == "4:5":
-        font_size = 48
-        margin_v = 180
+        font_size = 34
+        margin_v = 120
     else:  # 16:9
-        font_size = 48
-        margin_v = 90
+        font_size = 32
+        margin_v = 60
         
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -51,8 +51,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ViralDefault,Arial Black,{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,0,2,60,60,{margin_v},1
-Style: ViralHighlight,Arial Black,{font_size+2},&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,105,105,0,0,1,5,0,2,60,60,{margin_v},1
+Style: ViralDefault,DejaVu Sans,Arial,sans-serif,{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,{margin_v},1
+Style: ViralHighlight,DejaVu Sans,Arial,sans-serif,{font_size+2},&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,105,105,0,0,1,4,0,2,40,40,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

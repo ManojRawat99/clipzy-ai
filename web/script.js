@@ -354,10 +354,10 @@ function updateProgress(percent, message) {
   progressPercent.textContent = `${percent}%`;
   progressStatusText.textContent = message;
 
-  stepDl.classList.toggle("active", percent >= 15);
+  stepDl.classList.toggle("active", percent >= 10);
   stepAi.classList.toggle("active", percent >= 30);
-  stepCrop.classList.toggle("active", percent >= 60);
-  stepSub.classList.toggle("active", percent >= 85);
+  stepCrop.classList.toggle("active", percent >= 50);
+  stepSub.classList.toggle("active", percent >= 70);
 }
 
 // Settings modal

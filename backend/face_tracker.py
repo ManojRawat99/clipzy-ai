@@ -65,45 +65,39 @@ def compute_crop_coordinates(
         cap.release()
         return (crop_x, crop_y, crop_w, crop_h, target_w, target_h)
         
-    # 2. Face tracking on sample frames
-    start_frame = int(start_time * fps)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, start_frame))
-    
-    sample_interval = max(1, int(fps * 0.5))
-    max_samples = 20
+    # 2. Fast face tracking with 5 downscaled sample frames
     detected_centers = []
     
     try:
         mp_face_detection = mp.solutions.face_detection
-        with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) as face_detector:
-            current_frame = 0
-            samples_taken = 0
-            
-            while samples_taken < max_samples:
+        # model_selection=0 is fast, light short-range model (perfect for selfies/talking heads)
+        with mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as face_detector:
+            sample_timestamps = [start_time + (i * max(1.0, duration / 6.0)) for i in range(1, 6)]
+            for ts in sample_timestamps:
+                cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000.0)
                 ret, frame = cap.read()
-                if not ret:
-                    break
+                if not ret or frame is None:
+                    continue
                     
-                if current_frame % sample_interval == 0:
-                    samples_taken += 1
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    results = face_detector.process(rgb_frame)
-                    
-                    if results and results.detections:
-                        best_face = None
-                        max_area = 0
-                        for detection in results.detections:
-                            bbox = detection.location_data.relative_bounding_box
-                            area = bbox.width * bbox.height
-                            if area > max_area:
-                                max_area = area
-                                best_face = bbox
-                                
-                        if best_face:
-                            face_cx = int((best_face.xmin + best_face.width / 2.0) * width)
-                            detected_centers.append(face_cx)
-                            
-                current_frame += 1
+                # Downscale to 320px width for blazing fast 15ms detection
+                h_f, w_f = frame.shape[:2]
+                scale = 320.0 / w_f
+                small = cv2.resize(frame, (320, max(1, int(h_f * scale))), interpolation=cv2.INTER_NEAREST)
+                rgb_small = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+                
+                results = face_detector.process(rgb_small)
+                if results and results.detections:
+                    best_face = None
+                    max_area = 0
+                    for detection in results.detections:
+                        bbox = detection.location_data.relative_bounding_box
+                        area = bbox.width * bbox.height
+                        if area > max_area:
+                            max_area = area
+                            best_face = bbox
+                    if best_face:
+                        face_cx = int((best_face.xmin + best_face.width / 2.0) * width)
+                        detected_centers.append(face_cx)
     except Exception as e:
         print(f"Face tracking error: {e}")
     finally:

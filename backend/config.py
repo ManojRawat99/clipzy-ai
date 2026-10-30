@@ -47,16 +47,16 @@ DEFAULT_NUM_CLIPS = 3
 DEFAULT_MIN_DURATION = 25  # seconds
 DEFAULT_MAX_DURATION = 60  # seconds
 
-# Supported Aspect Ratios
+# Supported Aspect Ratios (Optimized 720p Mobile HD for blazing fast cloud rendering)
 ASPECT_RATIOS = {
-    "9:16": {"width": 1080, "height": 1920, "ratio": 9.0 / 16.0, "name": "Shorts / Reels (9:16)"},
-    "1:1": {"width": 1080, "height": 1080, "ratio": 1.0, "name": "Square (1:1)"},
-    "4:5": {"width": 1080, "height": 1350, "ratio": 4.0 / 5.0, "name": "Portrait Feed (4:5)"},
-    "16:9": {"width": 1920, "height": 1080, "ratio": 16.0 / 9.0, "name": "Landscape (16:9)"}
+    "9:16": {"width": 720, "height": 1280, "ratio": 9.0 / 16.0, "name": "Shorts / Reels (9:16)"},
+    "1:1": {"width": 720, "height": 720, "ratio": 1.0, "name": "Square (1:1)"},
+    "4:5": {"width": 720, "height": 900, "ratio": 4.0 / 5.0, "name": "Portrait Feed (4:5)"},
+    "16:9": {"width": 1280, "height": 720, "ratio": 16.0 / 9.0, "name": "Landscape (16:9)"}
 }
 
 DEFAULT_ASPECT_RATIO = "9:16"
-TARGET_WIDTH = 1080
-TARGET_HEIGHT = 1920
+TARGET_WIDTH = 720
+TARGET_HEIGHT = 1280
 
 
