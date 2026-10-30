@@ -152,6 +152,21 @@ def process_video_job(
         source_video_path = TEMP_DIR / f"source_{job_id}.mp4"
         downloaded_path = download_video(url, source_video_path)
         
+        # Verify video duration from actual downloaded media
+        try:
+            import cv2
+            cap = cv2.VideoCapture(str(downloaded_path))
+            if cap.isOpened():
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+                if frame_count > 0 and fps > 0:
+                    real_dur = frame_count / fps
+                    if real_dur > 5.0:
+                        total_duration = real_dur
+                cap.release()
+        except Exception as e_probe:
+            print(f"Video duration probe note: {e_probe}")
+        
         generated_clips = []
         total_candidates = len(clip_candidates)
         

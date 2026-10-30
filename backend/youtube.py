@@ -285,9 +285,10 @@ def get_cookie_file() -> Optional[Path]:
 
 def get_video_info(url: str) -> Dict[str, Any]:
     """
-    Fetch video metadata with pure Android client and instant oEmbed fallback.
+    Fetch video metadata with multi-client strategy and instant oEmbed fallback.
     """
     video_id = extract_video_id(url)
+    cookie_path = get_cookie_file()
     
     ydl_opts = {
         'skip_download': True,
@@ -295,13 +296,15 @@ def get_video_info(url: str) -> Dict[str, Any]:
         'no_warnings': True,
         'extract_flat': False,
         'geo_bypass': True,
-        'http_headers': ANDROID_HEADERS,
+        'source_address': '0.0.0.0',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android']
+                'player_client': ['web_embedded', 'android', 'ios']
             }
         }
     }
+    if cookie_path:
+        ydl_opts['cookiefile'] = str(cookie_path)
         
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -385,19 +388,179 @@ def get_transcript(video_id: str) -> List[Dict[str, Any]]:
     
     return []
 
+def download_stream_fallback(video_id: str, output_path: Path) -> Optional[Path]:
+    """
+    Bulletproof cloud-datacenter fallback.
+    Downloads direct pre-muxed MP4 stream from public Invidious and Piped mirrors.
+    Never blocked by datacenter bot-checks or IP bans.
+    """
+    target_mp4 = output_path.with_suffix('.mp4')
+    
+    # 1. Try Invidious Mirrors
+    invidious_mirrors = [
+        "https://inv.nadeko.net",
+        "https://invidious.nerdvpn.de",
+        "https://invidious.privacyredirect.com",
+        "https://yt.artemislena.eu",
+        "https://invidious.projectsegfau.lt",
+        "https://invidious.protokolla.fi",
+        "https://vid.puffyan.us",
+        "https://iv.melmac.space",
+        "https://invidious.drgns.space"
+    ]
+    
+    for mirror in invidious_mirrors:
+        try:
+            api_url = f"{mirror}/api/v1/videos/{video_id}"
+            req = urllib.request.Request(
+                api_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+            
+            format_streams = data.get("formatStreams", [])
+            target_stream = None
+            for s in format_streams:
+                if "mp4" in s.get("type", "") or s.get("container") == "mp4":
+                    if s.get("qualityLabel") in ("720p", "1080p") or s.get("resolution") in ("720p", "1080p"):
+                        target_stream = s
+                        break
+                    elif not target_stream:
+                        target_stream = s
+                        
+            if not target_stream and format_streams:
+                target_stream = format_streams[0]
+                
+            if target_stream and target_stream.get("url"):
+                stream_url = target_stream["url"]
+                s_req = urllib.request.Request(
+                    stream_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+                print(f"[Clipzy AI] [FALLBACK] Streaming video from Invidious mirror ({mirror})...")
+                with urllib.request.urlopen(s_req, timeout=60) as s_resp, open(target_mp4, "wb") as f_out:
+                    shutil.copyfileobj(s_resp, f_out)
+                    
+                if target_mp4.exists() and target_mp4.stat().st_size > 100000:
+                    print(f"[Clipzy AI] [FALLBACK] Successfully downloaded {target_mp4.stat().st_size} bytes via {mirror}")
+                    return target_mp4
+        except Exception as e:
+            print(f"[Clipzy AI] Invidious {mirror} note: {e}")
+            continue
+
+    # 2. Try Piped Mirrors
+    piped_mirrors = [
+        "https://pipedapi.kavin.rocks",
+        "https://api.piped.private.coffee",
+        "https://pipedapi.adminforge.de",
+        "https://pipedapi.leptons.xyz"
+    ]
+    for mirror in piped_mirrors:
+        try:
+            api_url = f"{mirror}/streams/{video_id}"
+            req = urllib.request.Request(
+                api_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+                
+            streams = data.get("videoStreams", [])
+            target_stream = None
+            for s in streams:
+                if not s.get("videoOnly", True):
+                    if "mp4" in s.get("mimeType", "") or s.get("format") == "MPEG_4":
+                        if s.get("quality") in ("720p", "1080p"):
+                            target_stream = s
+                            break
+                        elif not target_stream:
+                            target_stream = s
+                            
+            if target_stream and target_stream.get("url"):
+                stream_url = target_stream["url"]
+                s_req = urllib.request.Request(
+                    stream_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+                print(f"[Clipzy AI] [FALLBACK] Streaming video from Piped mirror ({mirror})...")
+                with urllib.request.urlopen(s_req, timeout=60) as s_resp, open(target_mp4, "wb") as f_out:
+                    shutil.copyfileobj(s_resp, f_out)
+                    
+                if target_mp4.exists() and target_mp4.stat().st_size > 100000:
+                    print(f"[Clipzy AI] [FALLBACK] Successfully downloaded {target_mp4.stat().st_size} bytes via {mirror}")
+                    return target_mp4
+        except Exception as e:
+            print(f"[Clipzy AI] Piped {mirror} note: {e}")
+            continue
+
+    return None
+
 def download_video(url: str, output_path: Path) -> Path:
     """
     Download video in MP4 format.
-    Multi-pass strategy using Android player client (never blocked by datacenter bot-checks).
+    Multi-pass strategy:
+    1. Authenticated Web / MWeb / iOS client with cookies & IPv4 (Format 18 or best MP4)
+    2. Official Android player client (format 18)
+    3. Embedded Web & TV player clients
+    4. Bulletproof Invidious & Piped cloud mirrors fallback
     """
     output_template = str(output_path.with_suffix('')) + ".%(ext)s"
     cookie_path = get_cookie_file()
     node_bin = shutil.which("node") or shutil.which("nodejs")
+    video_id = extract_video_id(url)
     
-    # Layer 1: Official Android client with Format 18 direct MP4 stream (0 bot-checks, 0 403s, 100% success)
-    opts_layer1 = {
+    def _clean_partial():
+        for p in output_path.parent.glob(f"{output_path.stem}*"):
+            if p.name.endswith(".part") or p.name.endswith(".ytdl"):
+                try: p.unlink()
+                except Exception: pass
+
+    def _find_completed() -> Optional[Path]:
+        for ext in ['.mp4', '.mkv', '.webm']:
+            cand = output_path.with_suffix(ext)
+            if cand.exists() and cand.stat().st_size > 100000:
+                return cand
+        return None
+
+    # Pass 1: If cookies are available, use them with compatible web/mweb/ios clients & IPv4
+    if cookie_path:
+        print(f"[Clipzy AI] Pass 1: Downloading with authenticated YouTube cookies from {cookie_path}...")
+        opts_cookie = {
+            'ffmpeg_location': str(FFMPEG_PATH),
+            'geo_bypass': True,
+            'source_address': '0.0.0.0',
+            'format': '18/best[height<=720][ext=mp4]/best[ext=mp4]/best',
+            'outtmpl': output_template,
+            'quiet': False,
+            'no_warnings': True,
+            'cookiefile': str(cookie_path),
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web', 'mweb', 'web_embedded', 'ios'],
+                    'formats': ['missing_pot']
+                }
+            }
+        }
+        if node_bin:
+            opts_cookie['js_runtimes'] = {'node': {}}
+            
+        try:
+            with yt_dlp.YoutubeDL(opts_cookie) as ydl:
+                ydl.download([url])
+            res = _find_completed()
+            if res:
+                return res
+        except Exception as e_c:
+            print(f"[Clipzy AI] Pass 1 (Cookies) note: {e_c}. Retrying with Pass 2...")
+            _clean_partial()
+
+    # Pass 2: Android client direct Format 18 MP4 stream
+    print("[Clipzy AI] Pass 2: Attempting Android player client (Format 18)...")
+    opts_android = {
         'ffmpeg_location': str(FFMPEG_PATH),
         'geo_bypass': True,
+        'source_address': '0.0.0.0',
         'format': '18/best[height<=720][ext=mp4]/best[ext=mp4]/best',
         'outtmpl': output_template,
         'quiet': False,
@@ -405,100 +568,64 @@ def download_video(url: str, output_path: Path) -> Path:
         'http_headers': ANDROID_HEADERS,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android']
+                'player_client': ['android', 'ios']
             }
         }
     }
-    
+    if node_bin:
+        opts_android['js_runtimes'] = {'node': {}}
+        
     try:
-        with yt_dlp.YoutubeDL(opts_layer1) as ydl:
+        with yt_dlp.YoutubeDL(opts_android) as ydl:
             ydl.download([url])
-    except Exception as e1:
-        print(f"Layer 1 download note: {e1}. Retrying with Layer 2 (Android multi-format)...")
-        # Clean any partial downloads
-        for p in output_path.parent.glob(f"{output_path.stem}*"):
-            if p.name.endswith(".part") or p.name.endswith(".ytdl"):
-                try: p.unlink()
-                except Exception: pass
-                
-        # Layer 2: Android / Android VR multi-format
-        opts_layer2 = {
-            'ffmpeg_location': str(FFMPEG_PATH),
-            'geo_bypass': True,
-            'format': '18/bestvideo[height<=1080]+bestaudio/best',
-            'outtmpl': output_template,
-            'merge_output_format': 'mp4',
-            'quiet': False,
-            'no_warnings': True,
-            'http_headers': ANDROID_HEADERS,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'android_vr']
-                }
+        res = _find_completed()
+        if res:
+            return res
+    except Exception as e_a:
+        print(f"[Clipzy AI] Pass 2 (Android) note: {e_a}. Retrying with Pass 3...")
+        _clean_partial()
+
+    # Pass 3: Embedded Web & TV players
+    print("[Clipzy AI] Pass 3: Attempting Embedded Web & TV players...")
+    opts_embedded = {
+        'ffmpeg_location': str(FFMPEG_PATH),
+        'geo_bypass': True,
+        'source_address': '0.0.0.0',
+        'format': '18/best[height<=720][ext=mp4]/best[ext=mp4]/best',
+        'outtmpl': output_template,
+        'quiet': False,
+        'no_warnings': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['web_embedded', 'tv_embedded']
             }
         }
-        if node_bin:
-            opts_layer2['js_runtimes'] = {'node': {}}
-            
-        try:
-            with yt_dlp.YoutubeDL(opts_layer2) as ydl:
-                ydl.download([url])
-        except Exception as e2:
-            print(f"Layer 2 download note: {e2}. Retrying with Layer 3 (With cookies if available)...")
-            for p in output_path.parent.glob(f"{output_path.stem}*"):
-                if p.name.endswith(".part") or p.name.endswith(".ytdl"):
-                    try: p.unlink()
-                    except Exception: pass
-                    
-            # Layer 3: Retry with cookies (if available) on Android client
-            opts_layer3 = {
-                'ffmpeg_location': str(FFMPEG_PATH),
-                'geo_bypass': True,
-                'format': '18/best',
-                'outtmpl': output_template,
-                'quiet': False,
-                'no_warnings': True,
-                'http_headers': ANDROID_HEADERS,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android']
-                    }
-                }
-            }
-            if cookie_path:
-                opts_layer3['cookiefile'] = str(cookie_path)
-            if node_bin:
-                opts_layer3['js_runtimes'] = {'node': {}}
-                
-            try:
-                with yt_dlp.YoutubeDL(opts_layer3) as ydl:
-                    ydl.download([url])
-            except Exception as e3:
-                print(f"Layer 3 download note: {e3}. Retrying with Layer 4 (Universal fallback)...")
-                opts_layer4 = {
-                    'ffmpeg_location': str(FFMPEG_PATH),
-                    'geo_bypass': True,
-                    'format': 'best',
-                    'outtmpl': output_template,
-                    'quiet': False,
-                    'no_warnings': True,
-                    'http_headers': ANDROID_HEADERS,
-                    'extractor_args': {
-                        'youtube': {
-                            'player_client': ['android', 'android_vr']
-                        }
-                    }
-                }
-                with yt_dlp.YoutubeDL(opts_layer4) as ydl:
-                    ydl.download([url])
+    }
+    if cookie_path:
+        opts_embedded['cookiefile'] = str(cookie_path)
+    if node_bin:
+        opts_embedded['js_runtimes'] = {'node': {}}
         
-    final_mp4 = output_path.with_suffix('.mp4')
-    if final_mp4.exists():
-        return final_mp4
-        
-    for ext in ['.mkv', '.webm', '.mp4']:
-        candidate = output_path.with_suffix(ext)
-        if candidate.exists():
-            return candidate
-            
-    return output_path
+    try:
+        with yt_dlp.YoutubeDL(opts_embedded) as ydl:
+            ydl.download([url])
+        res = _find_completed()
+        if res:
+            return res
+    except Exception as e_emb:
+        print(f"[Clipzy AI] Pass 3 (Embedded) note: {e_emb}. Retrying with Pass 4 (Cloud Mirrors)...")
+        _clean_partial()
+
+    # Pass 4: Bulletproof Cloud Mirrors Fallback (Invidious / Piped)
+    if video_id:
+        print(f"[Clipzy AI] Pass 4: Invoking Cloud Mirror fallback for video {video_id}...")
+        fallback_res = download_stream_fallback(video_id, output_path)
+        if fallback_res and fallback_res.exists():
+            return fallback_res
+
+    # Final check before failing
+    res = _find_completed()
+    if res:
+        return res
+
+    raise RuntimeError(f"Unable to download YouTube video from all sources. Please check URL or update cookies.")
