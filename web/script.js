@@ -274,6 +274,8 @@ clipBtn.addEventListener("click", async () => {
     </span>
   `;
   progressBox.classList.remove("hidden");
+  const errBox = document.getElementById("progressErrorBox");
+  if (errBox) errBox.classList.add("hidden");
   updateProgress(5, "Connecting to video pipeline...");
 
   try {
@@ -337,7 +339,15 @@ function pollStatus(jobId) {
         clearInterval(pollTimer);
         resetGenerateButton();
         const friendlyError = job.error || "An error occurred during video processing.";
-        showToast("Processing Failed", friendlyError, "error", 7000);
+        showToast("Processing Failed", friendlyError, "error", 10000);
+        
+        // Render error directly inside progress box so it is visible permanently
+        const errBox = document.getElementById("progressErrorBox");
+        const errText = document.getElementById("progressErrorText");
+        if (errBox && errText) {
+          errText.textContent = friendlyError;
+          errBox.classList.remove("hidden");
+        }
       } else if (job.status === "not_found") {
         clearInterval(pollTimer);
         resetGenerateButton();

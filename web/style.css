@@ -559,6 +559,40 @@ body {
   box-shadow: 0 0 8px var(--primary-glow);
 }
 
+.progress-error-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-md);
+  color: #fca5a5;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  animation: fadeIn 0.3s ease;
+}
+
+.progress-error-box .error-badge-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.progress-error-box .error-content strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #f87171;
+  margin-bottom: 2px;
+}
+
+.progress-error-box .error-content p {
+  font-size: 12.5px;
+  color: #fecaca;
+  line-height: 1.45;
+  margin: 0;
+}
+
 /* ====================================================
    CLIPS RESULTS SECTION
    ==================================================== */

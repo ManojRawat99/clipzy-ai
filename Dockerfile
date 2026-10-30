@@ -16,7 +16,7 @@ WORKDIR /app
 
 # Install Python requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir -U "yt-dlp[default]"
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir -U "yt-dlp[default]" "yt-dlp-ejs"
 
 # Copy application files (excluding local temp/output if any)
 COPY backend/ ./backend/
